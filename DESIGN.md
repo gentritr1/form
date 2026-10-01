@@ -1,30 +1,37 @@
-# FORM: exhibition edition
+# FORM: sculpture studio edition
 
-FORM is an interactive sculpture exhibition. Its identity comes from three original parametric surfaces, restrained material colors, and a contrast between precise sans-serif labels and italic serif sculpture names. The surrounding interface gives the objects room.
+Reading this as a playful sculpture exhibition for design-conscious visitors, with a precise, tactile studio at its center. This is a targeted evolution of the existing site: preserve the wordmark, original sculptures, cool gray/copper identity, anchors, collection, and generated still life. Dials: variance 8, motion 7, density 4. The extra motion belongs to creating and discovering sculptures.
 
-## Composition
+## Composition and typography
 
-The hero uses two real grid columns, followed by a separate caption/control row. It changes to a flowing layout at tablet widths. The gallery is asymmetric: a larger Trefoil, an offset Orbit, then a wide Bloom. Flat artwork frames and text controls replace the previous repeated capsules and rounded cards. Each object has a specific description of its construction. The generated chrome-and-cobalt image is explicitly identified as a separate concept image.
+The hero uses two grid columns and a separate caption/control row. Tablet/mobile changes to a flowing layout. An asymmetric gallery introduces the three mathematical surfaces. The full-width sculpture studio breaks the sequence of split sections, followed by the still life and studio explanation. Collection and material headers are stacked.
 
-Typography uses locally available Helvetica Neue and Georgia with standard fallbacks. No network font requests or restricted system-font redistribution. Desktop body copy is 16px; controls and secondary labels are 14px. Cool gray #e9ebed, charcoal #272a2d, secondary #5b6065, copper #a55c3b. Full-page light/dark tokens, remembered theme choice, and matching browser theme color.
+One sans-serif family throughout: Helvetica Neue, Helvetica, Arial. Hero emphasis is italic within the same family with extra descender clearance, replacing the previous decorative serif insertion. Local fonts avoid runtime network requests and system-font redistribution. Body copy is 16px; controls and supporting labels are 14px. Existing tokens: cool gray #e9ebed, charcoal #272a2d, muted #5b6065, copper #a55c3b. Light/dark themes remain page-wide and remember the visitor's choice. The studio's three background colors are artwork settings also used by the exported print.
+
+## Visitor experience
+
+Explore an object, enter the studio, manipulate its surface, try a curated combination, and keep a personal poster. Native object/material selects and labeled twist/light ranges keep the experience discoverable. A separate 44px touch handle offers direct shaping without capturing gestures elsewhere on the page. Keyboard arrows, Home/End, and PageUp/PageDown offer equivalent control. The title is optional, limited to 42 characters, and inserted as text. Printing exports a 1200 × 1500 PNG locally, without accounts or uploads.
+
+Five curated studies deliberately pair shape, material, twist, light, angle, and scene. Surprise me excludes the immediately previous choice. User naming persists across discovery; Start again restores the original Bloom studio.
 
 ## Motion contract
 
-- The hero's two masked lines enter over 650ms, 55ms apart. Its sculpture fades in at the same time. Supporting content is available immediately.
-- Object selection morphs a common topology over 650ms. This motion explains the relationship between surfaces. An interrupted morph captures the displayed surface before retargeting.
-- Materials transition over 220ms from the currently displayed color, metalness, and roughness.
-- Pointer rotation carries damped angular inertia. Keyboard rotation responds immediately. Fine-pointer movement shifts the hero light; leaving the viewer recenters it.
-- Gallery objects rotate on fine-pointer hover. Their frames stay still. A small directional arrow confirms the open action.
-- Editorial imagery, studio text, and the footer remain still. The sculpture holds the page's motion hierarchy.
+- Hero typography enters as two masked lines over 650ms, 55ms apart. Its sculpture fades in concurrently. Other page content remains immediately available.
+- Shape morphs take 650ms and preserve the current blended surface when interrupted.
+- Material transitions take 220ms and retarget from the current displayed values.
+- Direct twisting follows input immediately. Preset deformation and light ease toward their targets. The handle has a small resistance beyond its limits and settles on release using a 220ms transform transition.
+- Object dragging has damped angular inertia. Arrow-key object rotation is immediate.
+- Gallery objects rotate on fine-pointer hover; frames stay still. A small arrow acknowledges their open action.
+- Editorial image, studio explanation, and footer stay still.
 
-Cubic-bezier(.23,1,.32,1) is shared by CSS and JavaScript. Automatic motion stops offscreen or when the page is hidden. Reduced motion removes automatic rotation, inertia, morph transitions, and entrance effects. Changing this preference preserves the visitor's explicit pause choice. Hero and playground have independent pause controls.
+The main timing curve is cubic-bezier(.23,1,.32,1), shared by CSS and JavaScript. Reduced motion removes automatic rotation, inertia, morph transitions, and entrances, while manual interaction remains. Page hiding and offscreen observers suspend rendering. Preference changes preserve explicit pause choices. Context loss cancels sculpting and disables unavailable controls; restoration rebuilds resources and restores access.
 
-## 3D and recovery
+## Renderer and export
 
-Dependency-free WebGL; shared mesh topology; GGX direct lighting; Schlick Fresnel; procedural studio reflections; subtle metal grain; filmic tone mapping. Playground deformation uses finite-difference normals. Startup generates geometry once. ResizeObserver caches canvas dimensions. Pixel ratio is capped at 1.5 (1.25 for previews). Object scale follows the shorter viewport dimension to prevent portrait clipping.
+Dependency-free WebGL with shared topology, GGX direct lighting, Schlick Fresnel, procedural studio reflections, subtle metal grain, and filmic tone mapping. Finite-difference normals follow deformation. Geometry is generated once at startup; ResizeObserver caches dimensions. DPR is capped at 1.5 (1.25 previews), and scale follows the shorter viewport dimension.
 
-A lost WebGL context hides the canvas and disables unavailable controls. Restoration rebuilds buffers and shaders, hides fallback text, and re-enables controls. Gallery selection focuses a visible selector if the live viewer is unavailable. A no-JavaScript message is present near the page top.
+Simulation and drawing are separate. Print composition draws a high-resolution frame immediately before copying it to a 2D canvas, then restores the live canvas dimensions. It does not advance the pose or material transition and does not require preserveDrawingBuffer. Encoding has visible busy, success, and retry states, prevents duplicate export clicks, and revokes temporary object URLs.
 
-## Validation boundary
+## Pre-flight and validation boundary
 
-State/lifecycle regression checks use a mock WebGL context. They do not verify shader compilation, browser layout, appearance, or perceived timing. Browser visual review remains outstanding because the execution environment blocks local previews. See AUDIT.md for the refinement decisions and README.md for running the project.
+Static checks cover unique IDs, valid anchors/assets, labeled controls, slider semantics, text contrast, and source/standalone consistency. Mocked rendering checks cover state transitions, gestures, keyboard control, context recovery, pause settings, curated variation, export state preservation, dimension restoration, and failures. Local preview restrictions still prevent browser visual review. Actual GPU rendering, PNG pixels, mobile Safari downloading, font wrapping, and perceived smoothness remain outstanding. See AUDIT.md and README.md.

@@ -134,7 +134,7 @@ class Sculpture {
   this.canvas=canvas;this.shape=shape;this.mode=mode;this.currentMesh=meshes[shape];this.targetMesh=this.currentMesh;
   this.x=shape===2?.15:-.38;this.y=.35;this.tx=this.x;this.ty=this.y;
   this.morph=1;this.morphStart=0;this.last=0;this.visible=false;this.frame=0;this.paused=false;
-  this.dragging=false;this.velocity=0;this.hovered=false;this.tension=mode==='lab'?.35:0;this.light=mode==='lab'?0:.15;this.targetLight=this.light;
+  this.dragging=false;this.velocity=0;this.hovered=false;this.tension=mode==='lab'?.35:0;this.targetTension=this.tension;this.light=mode==='lab'?0:.15;this.targetLight=this.light;
   this.material=material;this.color=[...materials[material].color];this.metal=materials[material].metal;this.roughness=materials[material].roughness;
   this.materialFrom={color:[...this.color],metal:this.metal,roughness:this.roughness};this.materialStart=0;this.materialProgress=1;
   this.gl=canvas.getContext('webgl',{alpha:true,antialias:true,powerPreference:'low-power'});
@@ -157,7 +157,7 @@ class Sculpture {
   this.syncAvailability();
  }
  syncAvailability() {
-  if(this.mode==='lab')document.querySelectorAll('.experiment-controls input,.experiment-controls button').forEach(c=>c.disabled=!this.available);
+  if(this.mode==='lab')document.querySelectorAll('.experiment-controls input,.experiment-controls select,#lab-reset,#shape-handle,#surprise').forEach(c=>c.disabled=!this.available);
   if(this.onAvailabilityChange)this.onAvailabilityChange();
  }
  initialize() {
@@ -185,6 +185,11 @@ class Sculpture {
  setMaterial(material) {
   this.materialFrom={color:[...this.color],metal:this.metal,roughness:this.roughness};this.material=material;this.materialStart=performance.now();this.materialProgress=0;this.request();
  }
+ setTension(value, immediate=false) {
+  this.targetTension=Math.max(0,Math.min(1,value));
+  if(immediate||reducedMotion.matches)this.tension=this.targetTension;
+  this.request();
+ }
  bindInteraction() {
   let px=0,py=0,last=0;
   this.canvas.addEventListener('pointerdown',e=>{if(e.button!==0)return;this.dragging=true;this.velocity=0;px=e.clientX;py=e.clientY;last=performance.now();this.canvas.setPointerCapture(e.pointerId);});
@@ -205,8 +210,7 @@ class Sculpture {
  request(){if(!this.frame&&this.available&&this.visible&&!document.hidden)this.frame=requestAnimationFrame(t=>this.render(t));}
  render(time) {
   this.frame=0;if(!this.available||!this.visible||document.hidden)return;
-  const gl=this.gl,dpr=Math.min(devicePixelRatio||1,this.mode==='preview'?1.25:1.5),w=Math.round(this.width*dpr),h=Math.round(this.height*dpr);if(!w||!h)return;
-  if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;gl.viewport(0,0,w,h);}
+  const dpr=Math.min(devicePixelRatio||1,this.mode==='preview'?1.25:1.5),w=Math.round(this.width*dpr),h=Math.round(this.height*dpr);if(!w||!h)return;
   const dt=this.last?Math.min((time-this.last)/1000,.05):.016;this.last=time;
   const auto=this.mode!=='preview'&&!this.paused&&!this.dragging&&!reducedMotion.matches;
   if(auto)this.ty+=dt*.105;
@@ -214,9 +218,18 @@ class Sculpture {
   if(!this.dragging&&!reducedMotion.matches&&Math.abs(this.velocity)>.005){this.ty+=this.velocity*dt;this.velocity*=Math.exp(-5*dt);}
   const smooth=reducedMotion.matches?1:1-Math.exp(-15*dt);
   this.x+=(this.tx-this.x)*smooth;this.y+=(this.ty-this.y)*smooth;this.light+=(this.targetLight-this.light)*smooth;
+  this.tension+=(this.targetTension-this.tension)*smooth;
   if(this.morph<1)this.morph=reducedMotion.matches?1:easeOut((time-this.morphStart)/650);
   if(this.materialProgress<1){this.materialProgress=reducedMotion.matches?1:Math.min(1,(time-this.materialStart)/220);const t=easeOut(this.materialProgress),target=materials[this.material];this.color=this.materialFrom.color.map((c,i)=>c+(target.color[i]-c)*t);this.metal=this.materialFrom.metal+(target.metal-this.materialFrom.metal)*t;this.roughness=this.materialFrom.roughness+(target.roughness-this.materialFrom.roughness)*t;}
-  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);
+  this.draw(w,h);
+  const settling=Math.abs(this.x-this.tx)+Math.abs(this.y-this.ty)+Math.abs(this.light-this.targetLight)+Math.abs(this.tension-this.targetTension)>.001;
+  if(auto||this.hovered||settling||Math.abs(this.velocity)>.005||this.morph<1||this.materialProgress<1)this.request();
+ }
+ // Drawing is independent of simulation, so a print preserves the exact displayed state.
+ draw(w,h) {
+  const gl=this.gl;
+  if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
+  gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);
   for(const n of Object.keys(this.buffers)){const loc=this.attributes[n];gl.bindBuffer(gl.ARRAY_BUFFER,this.buffers[n]);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);}
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.index);const u=this.uniforms;
   // Fit the object to the shorter viewport dimension, including portrait canvases.
@@ -224,8 +237,12 @@ class Sculpture {
   gl.uniform1f(u.uX,this.x);gl.uniform1f(u.uY,this.y);gl.uniform1f(u.uAspect,w/h);gl.uniform1f(u.uScale,scale);
   gl.uniform1f(u.uMorph,this.morph);gl.uniform1f(u.uTension,this.tension);gl.uniform3fv(u.uColor,this.color);gl.uniform1f(u.uMetal,this.metal);gl.uniform1f(u.uRoughness,this.roughness);gl.uniform1f(u.uLight,this.light);
   gl.drawElements(gl.TRIANGLES,meshes[0].indices.length,gl.UNSIGNED_SHORT,0);
-  const settling=Math.abs(this.x-this.tx)+Math.abs(this.y-this.ty)+Math.abs(this.light-this.targetLight)>.001;
-  if(auto||this.hovered||settling||Math.abs(this.velocity)>.005||this.morph<1||this.materialProgress<1)this.request();
+ }
+ copyTo(context,x,y,w,h) {
+  if(!this.available||this.gl.isContextLost())throw Error('The live sculpture is unavailable.');
+  const previousWidth=this.canvas.width,previousHeight=this.canvas.height;
+  try{this.draw(w,h);context.drawImage(this.canvas,x,y,w,h);}
+  finally{if(previousWidth&&previousHeight)this.draw(previousWidth,previousHeight);else{this.canvas.width=previousWidth;this.canvas.height=previousHeight;}}
  }
  reset(){this.tx=this.shape===2?.15:-.38;this.ty=.35;this.velocity=0;this.request();}
 }
@@ -250,18 +267,112 @@ document.querySelectorAll('[data-object]').forEach(b=>b.addEventListener('click'
 document.querySelectorAll('.work').forEach(b=>b.addEventListener('click',()=>selectObject(Number(b.dataset.shape),true)));
 const pause=document.querySelector('#pause');
 const labPause=document.querySelector('#lab-pause');
+let savingPrint=false;
 function updatePause(){
  pause.disabled=reducedMotion.matches||!hero.available;pause.setAttribute('aria-pressed',String(hero.paused||reducedMotion.matches));pause.setAttribute('aria-label',reducedMotion.matches?'Automatic rotation disabled by reduced motion preference':hero.paused?'Resume sculpture rotation':'Pause sculpture rotation');
  labPause.disabled=reducedMotion.matches||!lab.available;labPause.textContent=reducedMotion.matches?'Motion off':lab.paused?'Resume motion':'Pause motion';labPause.setAttribute('aria-pressed',String(lab.paused||reducedMotion.matches));
  document.querySelector('#reset').disabled=!hero.available;
+ document.querySelector('#save-print').disabled=!lab.available||savingPrint;
 }
 hero.onAvailabilityChange=updatePause;lab.onAvailabilityChange=updatePause;
 updatePause();pause.addEventListener('click',()=>{hero.paused=!hero.paused;hero.velocity=0;updatePause();hero.request();});labPause.addEventListener('click',()=>{lab.paused=!lab.paused;lab.velocity=0;updatePause();lab.request();});
 document.querySelector('#reset').addEventListener('click',()=>{hero.reset();announce('View reset.');});
 const tension=document.querySelector('#tension'),light=document.querySelector('#light');
-tension.addEventListener('input',()=>{lab.tension=Number(tension.value)/100;lab.request();document.querySelector('#tension-value').textContent=tension.value+'%';tension.setAttribute('aria-valuetext',tension.value+' percent');});
-light.addEventListener('input',()=>{lab.targetLight=(Number(light.value)-45)*Math.PI/180;lab.request();document.querySelector('#light-value').textContent=light.value+'°';light.setAttribute('aria-valuetext',light.value+' degrees');});
-document.querySelector('#lab-reset').addEventListener('click',()=>{tension.value=35;light.value=45;lab.tension=.35;lab.targetLight=0;lab.reset();document.querySelector('#tension-value').textContent='35%';document.querySelector('#light-value').textContent='45°';tension.setAttribute('aria-valuetext','35 percent');light.setAttribute('aria-valuetext','45 degrees');announce('Original form and lighting restored.');});
+const handle=document.querySelector('#shape-handle'),labShape=document.querySelector('#lab-shape'),labMaterial=document.querySelector('#lab-material'),studyTitle=document.querySelector('#study-title');
+const labStage=document.querySelector('#lab-stage'),printStatus=document.querySelector('#print-status');
+const scenes={silver:{bg:'#d9e0e5',text:'#272a2d'},sage:{bg:'#cdd9d2',text:'#272a2d'},ink:{bg:'#202b35',text:'#f0f3f5'}};
+const studies=[
+ {title:'A softer orbit',shape:1,material:2,twist:12,light:25,scene:'sage',x:-.3,y:.7},
+ {title:'Folded chrome',shape:2,material:1,twist:68,light:110,scene:'silver',x:.2,y:1.1},
+ {title:'Copper current',shape:0,material:0,twist:56,light:145,scene:'ink',x:-.55,y:.6},
+ {title:'Porcelain loop',shape:0,material:2,twist:8,light:35,scene:'silver',x:-.1,y:1.4},
+ {title:'After dark',shape:1,material:1,twist:80,light:165,scene:'ink',x:.45,y:.4}
+];
+let scene=scenes.silver,studyName='Bloom study',lastStudy=-1;
+function updateStudyView(){
+ labShape.value=String(lab.shape);labMaterial.value=String(lab.material);
+ document.querySelector('#study-name').textContent=studyTitle.value.trim()||studyName;
+ document.querySelector('#lab-meta').textContent=`${names[lab.shape]} / ${materials[lab.material].name}`;
+ document.querySelector('#lab-fallback-name').textContent=names[lab.shape];
+ lab.canvas.setAttribute('aria-label',`Interactive ${materials[lab.material].name.toLowerCase()} ${names[lab.shape]}. Drag or use arrow keys to rotate.`);
+}
+function markPersonal(){studyName=`${names[lab.shape]} study`;updateStudyView();printStatus.textContent='Your print is a PNG. No sign-up needed.';delete printStatus.dataset.error;}
+function setScene(key){scene=scenes[key];labStage.style.setProperty('--scene-bg',scene.bg);labStage.style.setProperty('--scene-text',scene.text);}
+function setTwist(value,immediate=true){
+ const amount=Math.max(0,Math.min(100,Math.round(value)));tension.value=String(amount);lab.setTension(amount/100,immediate);
+ document.querySelector('#tension-value').textContent=amount+'%';tension.setAttribute('aria-valuetext',amount+' percent');
+ handle.setAttribute('aria-valuenow',String(amount));handle.setAttribute('aria-valuetext',amount+' percent');handle.style.setProperty('--twist-ratio',String((100-amount)/100));
+}
+function setLight(value){light.value=String(value);lab.targetLight=(value-45)*Math.PI/180;lab.request();document.querySelector('#light-value').textContent=value+'°';light.setAttribute('aria-valuetext',value+' degrees');}
+tension.addEventListener('input',()=>{setTwist(Number(tension.value));markPersonal();});
+light.addEventListener('input',()=>{setLight(Number(light.value));markPersonal();});
+labShape.addEventListener('change',()=>{lab.select(Number(labShape.value));markPersonal();announce(`${names[lab.shape]} in your studio.`);});
+labMaterial.addEventListener('change',()=>{lab.setMaterial(Number(labMaterial.value));markPersonal();announce(`${materials[lab.material].name} selected in your studio.`);});
+studyTitle.addEventListener('input',updateStudyView);
+document.querySelector('#surprise').addEventListener('click',()=>{
+ const options=studies.map((_,i)=>i).filter(i=>i!==lastStudy);lastStudy=options[Math.floor(Math.random()*options.length)];const next=studies[lastStudy];
+ lab.select(next.shape);lab.setMaterial(next.material);setTwist(next.twist,false);setLight(next.light);setScene(next.scene);lab.tx=next.x;lab.ty=next.y;lab.velocity=0;
+ studyName=next.title;updateStudyView();announce(`${next.title}. ${names[next.shape]}, ${materials[next.material].name}.`);
+ printStatus.textContent='Like this angle? Name it and save a print.';delete printStatus.dataset.error;
+});
+document.querySelector('#lab-reset').addEventListener('click',()=>{
+ lab.select(2);lab.setMaterial(1);setTwist(35,false);setLight(45);setScene('silver');lab.reset();studyTitle.value='';studyName='Bloom study';lastStudy=-1;updateStudyView();
+ printStatus.textContent='Your print is a PNG. No sign-up needed.';delete printStatus.dataset.error;announce('Original form and lighting restored.');
+});
+// A dedicated handle keeps sculpting separate from page scrolling and object rotation.
+let handlePointer=null,startY=0,startTwist=35,railHeight=160;
+handle.addEventListener('pointerdown',e=>{
+ if(e.button!==0||handle.disabled||handlePointer!==null)return;e.preventDefault();handlePointer=e.pointerId;startY=e.clientY;startTwist=Number(tension.value);
+ railHeight=document.querySelector('#shape-control').getBoundingClientRect().height||160;handle.dataset.dragging='true';handle.setPointerCapture(e.pointerId);
+});
+handle.addEventListener('pointermove',e=>{
+ if(e.pointerId!==handlePointer)return;
+ const raw=startTwist+(startY-e.clientY)/railHeight*100;setTwist(raw);markPersonal();
+ // Small resistance outside the range; the handle settles back to the real value on release.
+ const bounded=Math.max(0,Math.min(100,raw)),overshoot=(raw-bounded)*.14;
+ handle.style.setProperty('--twist-ratio',String((100-bounded-Math.max(-8,Math.min(8,overshoot)))/100));
+});
+function releaseHandle(){if(handlePointer===null)return;handlePointer=null;delete handle.dataset.dragging;handle.style.setProperty('--twist-ratio',String((100-Number(tension.value))/100));}
+lab.onAvailabilityChange=()=>{updatePause();if(!lab.available)releaseHandle();};
+handle.addEventListener('pointerup',releaseHandle);handle.addEventListener('pointercancel',releaseHandle);handle.addEventListener('lostpointercapture',releaseHandle);
+handle.addEventListener('keydown',e=>{
+ const current=Number(tension.value);let next;
+ if(e.key==='Home')next=0;else if(e.key==='End')next=100;else{const delta={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10}[e.key];if(delta===undefined)return;next=current+delta;}
+ e.preventDefault();setTwist(next);markPersonal();
+});
+setTwist(35);updateStudyView();
+
+function composePoster(sculpture,title){
+ const poster=document.createElement('canvas');poster.width=1200;poster.height=1500;const context=poster.getContext('2d');if(!context)throw Error('The print canvas is unavailable.');
+ context.fillStyle=scene.bg;context.fillRect(0,0,1200,1500);context.fillStyle=scene.text;context.textBaseline='alphabetic';
+ context.font='600 104px Helvetica, Arial, sans-serif';context.fillText('form',72,150);
+ context.font='24px Helvetica, Arial, sans-serif';context.fillText('A sculpture study by you',74,204);
+ let fontSize=64;context.font=`400 ${fontSize}px Helvetica, Arial, sans-serif`;
+ while(context.measureText(title).width>1056&&fontSize>22){fontSize-=2;context.font=`400 ${fontSize}px Helvetica, Arial, sans-serif`;}
+ context.fillText(title,72,306);
+ // Draw immediately before copying: no persistent drawing buffer or stale screenshot.
+ sculpture.copyTo(context,48,342,1104,930);
+ context.strokeStyle=scene.text;context.globalAlpha=.3;context.lineWidth=1;context.beginPath();context.moveTo(72,1310);context.lineTo(1128,1310);context.stroke();context.globalAlpha=1;
+ context.font='28px Helvetica, Arial, sans-serif';context.fillText(`${names[sculpture.shape]} / ${materials[sculpture.material].name}`,72,1368);
+ context.font='22px Helvetica, Arial, sans-serif';context.fillText('Made in the FORM playground',72,1420);
+ return poster;
+}
+const savePrint=document.querySelector('#save-print');
+savePrint.addEventListener('click',()=>{
+ if(savingPrint||!lab.available)return;savingPrint=true;updatePause();savePrint.setAttribute('aria-busy','true');document.querySelector('#save-label').textContent='Preparing print…';printStatus.textContent='Preparing your sculpture print.';delete printStatus.dataset.error;
+ const title=studyTitle.value.trim()||studyName;
+ const finish=error=>{savingPrint=false;savePrint.setAttribute('aria-busy','false');document.querySelector('#save-label').textContent='Save print';updatePause();if(error){printStatus.dataset.error='true';printStatus.textContent='The print could not be saved. Try again in a WebGL-enabled browser.';}else printStatus.textContent='Your print is ready. Check your downloads.';};
+ try{
+  const poster=composePoster(lab,title);
+  poster.toBlob(blob=>{
+   if(!blob){finish(true);return;}
+   let url;
+   try{url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;const slug=title.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'my-study';link.download=`form-${slug}.png`;document.body.append(link);link.click();link.remove();finish(false);}
+   catch{finish(true);}
+   finally{if(url)setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  },'image/png');
+ }catch{finish(true);}
+});
 const theme=document.querySelector('#theme'),systemTheme=matchMedia('(prefers-color-scheme: dark)');
 function updateTheme(){const dark=document.documentElement.dataset.theme?document.documentElement.dataset.theme==='dark':systemTheme.matches;theme.setAttribute('aria-label',`Switch to ${dark?'light':'dark'} theme`);document.querySelector('meta[name="theme-color"]').setAttribute('content',dark?'#1f2327':'#e9ebed');}
 theme.addEventListener('click',()=>{const dark=document.documentElement.dataset.theme?document.documentElement.dataset.theme==='dark':systemTheme.matches;document.documentElement.dataset.theme=dark?'light':'dark';try{localStorage.setItem('form-theme',document.documentElement.dataset.theme);}catch{}updateTheme();});
@@ -269,4 +380,4 @@ systemTheme.addEventListener('change',updateTheme);updateTheme();
 // System motion preference suspends movement without erasing the visitor's pause choice.
 reducedMotion.addEventListener('change',()=>{for(const s of allSculptures){s.velocity=0;s.hovered=false;s.request();}updatePause();});
 finePointer.addEventListener('change',()=>{if(!finePointer.matches)for(const s of previews){s.hovered=false;s.request();}});
-document.addEventListener('visibilitychange',()=>{for(const s of allSculptures){if(document.hidden){cancelAnimationFrame(s.frame);s.frame=0;}else{s.last=0;s.request();}}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseHandle();for(const s of allSculptures){if(document.hidden){cancelAnimationFrame(s.frame);s.frame=0;}else{s.last=0;s.request();}}});
