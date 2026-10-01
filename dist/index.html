@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#e9ebed">
+<title>FORM | Objects of imagination</title>
+<meta name="description" content="Three original digital sculptures. Rotate a trefoil knot, compare copper, chrome and porcelain, and reshape a live surface in FORM's interactive exhibition.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23222629'/%3E%3Cpath d='M11 10h19v5H16v6h11v5H16v9h-5z' fill='%23e9ebed'/%3E%3C/svg%3E">
+<script>try{const theme=localStorage.getItem('form-theme');if(theme==='light'||theme==='dark')document.documentElement.dataset.theme=theme;}catch{}</script>
+<link rel="stylesheet" href="styles.css"><script src="app.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#collection">Skip to collection</a>
+<header class="header wrap">
+<a class="logo" href="#" aria-label="FORM home">form</a>
+<nav aria-label="Main navigation"><a href="#collection">Collection</a><a href="#experiment">Playground</a><a href="#studio">The studio</a></nav>
+<button class="theme-toggle" id="theme" aria-label="Switch color theme"><span class="theme-full">Light / Dark</span><span class="theme-compact" aria-hidden="true">Theme</span></button>
+</header>
+<noscript><div class="no-script wrap">The sculptures need JavaScript. Enable it to rotate objects and use the playground. The exhibition notes and material study remain available below.</div></noscript>
+<main>
+<section class="hero wrap" aria-labelledby="hero-title">
+<div class="hero-copy"><h1 id="hero-title"><span class="type-line"><span>Objects of</span></span><span class="type-line type-serif"><span>imagination.</span></span></h1><p class="hero-description">Three sculptures, made from mathematics.<br>Turn them. Change the material. Find your angle.</p><a class="primary" href="#collection">Explore the collection <span aria-hidden="true">↘</span></a><div class="object-selector" role="group" aria-label="Choose a sculpture"><button data-object="0" aria-pressed="true">Trefoil</button><button data-object="1" aria-pressed="false">Orbit</button><button data-object="2" aria-pressed="false">Bloom</button></div></div>
+<div class="sculpture-stage" id="stage">
+<canvas id="hero-canvas" tabindex="0" role="img" aria-label="Interactive copper Trefoil sculpture. Drag to rotate, or use the arrow keys." aria-describedby="gesture-hint"></canvas>
+<div class="fallback" hidden><strong>Trefoil</strong><p>The interactive sculpture needs WebGL.<br>Try a browser with hardware acceleration enabled.</p></div>
+</div>
+<div class="object-caption"><div><strong id="object-name">Trefoil</strong><span id="object-desc">One continuous curve. Three crossings.</span></div><span class="material-label" id="material-name">Copper</span></div>
+<div class="viewer-tools"><div class="materials" role="group" aria-label="Sculpture material"><button class="swatch copper" data-material="0" aria-label="Copper material" aria-pressed="true"></button><button class="swatch chrome" data-material="1" aria-label="Chrome material" aria-pressed="false"></button><button class="swatch porcelain" data-material="2" aria-label="Porcelain material" aria-pressed="false"></button></div><span class="tool-divider"></span><button id="pause" class="pause" aria-pressed="false" aria-label="Pause sculpture rotation"><span class="pause-icon" aria-hidden="true"></span></button><button id="reset" class="reset">Reset view</button></div>
+<p class="gesture" id="gesture-hint">Drag to turn. Arrow keys work, too.</p>
+</section>
+<section class="collection wrap" id="collection" aria-labelledby="collection-title">
+<div class="section-heading"><h2 id="collection-title">The collection</h2><p>One knot. One ring. One folded surface.</p></div>
+<div class="gallery">
+<article class="work work-large" data-shape="0"><div class="art art-copper"><canvas class="preview" data-shape="0" data-material="0" aria-hidden="true"></canvas></div><div class="work-caption"><h3>Trefoil</h3><span>Copper <span class="work-arrow" aria-hidden="true">↗</span></span></div><p class="work-note">A single tube follows a knot and returns to where it began.</p><button class="work-open" aria-label="Open copper Trefoil in the viewer at the top of the page">Open in viewer</button></article>
+<article class="work work-small" data-shape="1"><div class="art art-silver"><canvas class="preview" data-shape="1" data-material="1" aria-hidden="true"></canvas></div><div class="work-caption"><h3>Orbit</h3><span>Chrome <span class="work-arrow" aria-hidden="true">↗</span></span></div><p class="work-note">A ring with an uneven radius, lifted into a slow wave.</p><button class="work-open" aria-label="Open chrome Orbit in the viewer at the top of the page">Open in viewer</button></article>
+<article class="work work-wide" data-shape="2"><div class="art art-bloom"><canvas class="preview" data-shape="2" data-material="2" aria-hidden="true"></canvas></div><div class="work-caption"><h3>Bloom</h3><span>Porcelain <span class="work-arrow" aria-hidden="true">↗</span></span></div><p class="work-note">A sphere, rippled into eight soft lobes. Light reveals the folds.</p><button class="work-open" aria-label="Open porcelain Bloom in the viewer at the top of the page">Open in viewer</button></article>
+</div>
+</section>
+<section class="experiment wrap" id="experiment" aria-labelledby="experiment-title">
+<div class="experiment-copy"><h2 id="experiment-title">Change the curve.</h2><p>Twist Bloom’s surface, then move the light to see how the reflections follow it.</p><div class="experiment-controls"><label for="tension"><span>Surface twist</span><output id="tension-value" for="tension">35%</output></label><input type="range" id="tension" min="0" max="100" value="35" aria-valuetext="35 percent"><label for="light"><span>Light direction</span><output id="light-value" for="light">45°</output></label><input type="range" id="light" min="0" max="180" value="45" aria-valuetext="45 degrees"><button class="text-link" id="lab-reset">Restore the original</button></div></div>
+<div class="lab-stage"><canvas id="lab-canvas" tabindex="0" role="img" aria-label="Interactive chrome Bloom. Use arrow keys or drag to rotate, and adjust the surface twist and light direction controls."></canvas><p class="lab-caption">Bloom / Chrome</p><button class="lab-pause" id="lab-pause" type="button" aria-pressed="false">Pause motion</button><div class="fallback" hidden><strong>Bloom</strong><p>The live experiment needs WebGL.<br>Try a browser with hardware acceleration enabled.</p></div></div>
+</section>
+<section class="material-story" aria-labelledby="material-title"><div class="story-heading wrap"><h2 id="material-title">A different kind of weight.</h2><p>Chrome folds around cobalt glass.<br>A still image, beyond the live collection.</p></div><figure class="story-frame"><img src="assets/material-dreams.jpg" alt="An impossible chrome ribbon intertwined with deep cobalt glass above a concrete gallery plinth." width="1672" height="941" loading="lazy" decoding="async"><figcaption class="wrap">Chrome × cobalt glass <span>Generated concept image</span></figcaption></figure></section>
+<section class="studio wrap" id="studio" aria-labelledby="studio-title"><div class="studio-title"><h2 id="studio-title">It starts<br>with a curve.</h2></div><div class="studio-copy"><p>Equations become objects.</p><p>Each sculpture starts with a mathematical surface. A radius changes. A path closes. A sphere develops folds. The same surface can read as heavy metal or soft ceramic when its material and lighting change.</p><p>FORM is a fictional studio and an interactive exhibition. The collection is drawn live in your browser; the cobalt still life is a separate image study.</p><dl class="studio-facts"><div><dt>Collection</dt><dd>Three original surfaces</dd></div><div><dt>Materials</dt><dd>Copper / Chrome / Porcelain</dd></div><div><dt>Interaction</dt><dd>Rotation / Morphing / Surface twist</dd></div></dl></div></section>
+</main>
+<footer class="footer wrap"><a class="footer-logo" href="#" aria-label="Back to FORM home">form</a><div class="footer-bottom"><span>A digital sculpture exhibition</span><span>© FORM 2026</span><a href="#">Back to top <span aria-hidden="true">↑</span></a></div></footer>
+<output class="sr-only" id="announcement" aria-live="polite"></output>
+</body></html>

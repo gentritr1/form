@@ -1,0 +1,15 @@
+# Local dependencies, credentials, and generated downloads
+node_modules/
+.env*
+*.pem
+.DS_Store
+*-debug.log*
+FORM-portfolio-project.zip
+
+# Local tool and hosting state
+.sites-runtime/
+.agents/
+.codex/
+.openai/
+outputs/
+work/

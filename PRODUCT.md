@@ -1,0 +1,2 @@
+# FORM
+A fictional digital sculpture studio created as a portfolio demonstration. Visitors explore three original mathematical sculptures, rotate them, compare materials, and experiment with deforming the Bloom object and its lighting. An original generated image presents an impossible material study. No real client claims or commercial services. All runtime resources are local; no external dependencies, forms, tracking, or third-party requests.
