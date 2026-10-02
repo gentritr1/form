@@ -15,6 +15,9 @@
    medianMs:quantile(intervals,.5),p95Ms:quantile(intervals,.95),worstMs:quantile(intervals,1),
    overBudgetCount:intervals.filter(x=>x>1500/refreshHz).length,overBudgetThresholdMs:1500/refreshHz};
  }
+ // Stalls that are slow at any refresh rate: a 60Hz frame is 16.7ms, so these do not depend on
+ // guessing whether an adaptive display was running at 60 or 120Hz.
+ function stalls(intervals){const slow=intervals.filter(x=>x>25);return {over25:slow.length,over50:intervals.filter(x=>x>50).length,lostMs:Math.round(slow.reduce((a,b)=>a+b,0))};}
  function range(values){const valid=values.filter(Number.isFinite);return valid.length?{min:Math.min(...valid),max:Math.max(...valid),samples:valid.length}:null;}
  function hashPixels(bytes){let hash=0x811c9dc5;for(const byte of bytes){hash^=byte;hash=Math.imul(hash,0x01000193);}return (hash>>>0).toString(16).padStart(8,'0');}
  // A timestamp belongs to the half-open window ending with that callback. A long interval
@@ -34,6 +37,6 @@
   }
   report(){if(this.invalid||!this.finished)throw Error(this.invalid||'Incomplete timeline.');return this.bins.map(x=>summarize(x,2000,this.refreshHz));}
  }
- const api={quantile,summarize,range,hashPixels,Timeline};
+ const api={quantile,summarize,stalls,range,hashPixels,Timeline};
  if(typeof module==='object'&&module.exports)module.exports=api;else root.FormPerfMetrics=api;
 })(globalThis);

@@ -24,6 +24,12 @@ const themeBackgrounds = {
   light: { copper: '#ECE9E4', chrome: '#E8EBEE', porcelain: '#E9ECE8' },
   dark: { copper: '#1B1917', chrome: '#17191C', porcelain: '#171A18' }
 };
+// Mirrors of the CSS --accent and --frame-* tokens, used by the room lighting (tests/tokens.cjs keeps them in step).
+const themeAccents = {
+  light: { copper: '#A04F2B', chrome: '#38597A', porcelain: '#44695A' },
+  dark: { copper: '#E0946A', chrome: '#93B7D8', porcelain: '#A3C9B4' }
+};
+const themeFrames = { light: ['#DDD5CD', '#CDD4DA', '#C8D0CA'], dark: ['#2C2622', '#232A32', '#232B27'] };
 // A JS lookup, not getComputedStyle: a computed read mid-crossfade returns an in-between colour.
 function syncThemeColor() {
   const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : systemTheme.matches;
@@ -461,8 +467,9 @@ class ContactShadow {
   for(const p of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE);
   this.softFbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,this.softFbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,this.softTexture,0);
   if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('Blur framebuffer unavailable.');gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  // The composite fades over the outer 12% of the view: a shadow longer than its canvas dissolves instead of ending in a hard edge.
   let vs='attribute vec2 aQuad;varying vec2 uv;void main(){uv=aQuad*.5+.5;gl_Position=vec4(aQuad,0.,1.);}';
-  let fs='precision highp float;varying vec2 uv;uniform sampler2D uMask;uniform float uBlur;void main(){if(uBlur<.5){gl_FragColor=texture2D(uMask,uv);return;}float alpha=0.;float total=0.;for(int x=-2;x<=2;x++){for(int y=-2;y<=2;y++){float weight=exp(-float(x*x+y*y)*.35);alpha+=texture2D(uMask,uv+vec2(float(x),float(y))*.008).a*weight;total+=weight;}}gl_FragColor=vec4(0.,0.,0.,alpha/total*.28);}';
+  let fs='precision highp float;varying vec2 uv;uniform sampler2D uMask;uniform float uBlur;void main(){if(uBlur<.5){vec2 edge=smoothstep(0.,.12,uv)*smoothstep(0.,.12,1.-uv);gl_FragColor=texture2D(uMask,uv)*edge.x*edge.y;return;}float alpha=0.;float total=0.;for(int x=-2;x<=2;x++){for(int y=-2;y<=2;y++){float weight=exp(-float(x*x+y*y)*.35);alpha+=texture2D(uMask,uv+vec2(float(x),float(y))*.008).a*weight;total+=weight;}}gl_FragColor=vec4(0.,0.,0.,alpha/total*.28);}';
   if(webgl2){vs='#version 300 es\n'+vs.replace('attribute','in').replace('varying','out');fs='#version 300 es\n'+fs.replace('varying','in').replace('precision highp float;','precision highp float;out vec4 pixel;').replace(/texture2D/g,'texture').replace(/gl_FragColor/g,'pixel');}
   const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;};
   this.program=gl.createProgram();const vertex=compile(gl.VERTEX_SHADER,vs),fragment=compile(gl.FRAGMENT_SHADER,fs);gl.attachShader(this.program,vertex);gl.attachShader(this.program,fragment);gl.linkProgram(this.program);gl.deleteShader(vertex);gl.deleteShader(fragment);
@@ -524,7 +531,29 @@ function cssLinear(value){
  }
  return c.length===3&&c.every(Number.isFinite)?c.map(v=>Math.pow(Math.max(0,v),2.2)):[.5,.5,.5];
 }
-function roomChanged(){if(roomEnabled)for(const s of allSculptures){s.roomUntil=performance.now()+450;s.request();}}
+// CSS `ease`, cubic-bezier(.25,.1,.25,1): the curve the page tokens and the studio scene crossfade with.
+function cssEase(progress){
+ const x=Math.max(0,Math.min(1,progress));let t=x;
+ for(let i=0;i<6;i++){const bx=.75*(1-t)**2*t+.75*(1-t)*t*t+t**3,dx=.75*(1-t)**2+2.25*t*t;if(dx>.00001)t=Math.max(0,Math.min(1,t-(bx-x)/dx));}
+ return .3*(1-t)**2*t+3*(1-t)*t*t+t**3;
+}
+// The room a sculpture stands in: the studio scene, its gallery frame, or the page. Read from the
+// token tables when the room changes and eased toward it, so no draw forces a style recalculation.
+function roomTarget(s){
+ const dark=document.documentElement.dataset.theme?document.documentElement.dataset.theme==='dark':systemTheme.matches,theme=dark?'dark':'light';
+ const material=document.documentElement.dataset.material||'copper',frame=previews.indexOf(s);
+ const background=s.mode==='lab'?scene.bg:frame>=0?themeFrames[theme][frame]:themeBackgrounds[theme][material];
+ return {room:cssLinear(background),accent:cssLinear(themeAccents[theme][material])};
+}
+function roomNow(s,time){
+ if(!s.roomTo){s.roomTo=roomTarget(s);s.roomFrom=s.roomTo;s.roomStart=-Infinity;s.roomDuration=1;}
+ const t=reducedMotion.matches?1:cssEase((time-s.roomStart)/s.roomDuration),mix=k=>s.roomFrom[k].map((v,i)=>v+(s.roomTo[k][i]-v)*t);
+ return {room:mix('room'),accent:mix('accent')};
+}
+function roomChanged(){
+ if(!roomEnabled)return;const now=performance.now();
+ for(const s of allSculptures){s.roomFrom=roomNow(s,now);s.roomTo=roomTarget(s);s.roomStart=now;s.roomDuration=s.mode==='lab'?240:420;s.roomUntil=now+s.roomDuration;s.request();}
+}
 class Sculpture {
  constructor(canvas, shape=0, material=0, mode='preview') {
   this.canvas=canvas;this.shape=shape;this.mode=mode;this.currentMesh=meshes[shape];this.targetMesh=this.currentMesh;
@@ -581,7 +610,8 @@ class Sculpture {
  }
  select(shape) {
   if(shape===this.shape)return;
-  if(constructionEnabled)this.construction.targetShape(shape,performance.now(),reducedMotion.matches);
+  // The studio keeps the continuous morph. Retracting and rebuilding there left the object absent while a word was typed.
+  if(constructionEnabled&&this.mode!=='lab')this.construction.targetShape(shape,performance.now(),reducedMotion.matches);
   // Preserve the current blended surface when a visitor interrupts a morph.
   if(this.morph<1){const blend=(a,b)=>Float32Array.from(a,(v,i)=>v+(b[i]-v)*this.morph);this.currentMesh={positions:blend(this.currentMesh.positions,this.targetMesh.positions),normals:blend(this.currentMesh.normals,this.targetMesh.normals),...(roomEnabled?{tangents:blend(this.currentMesh.tangents,this.targetMesh.tangents)}:{})};}
   else this.currentMesh=this.targetMesh;
@@ -673,7 +703,7 @@ class Sculpture {
   const scale=(this.mode==='hero'?1.1:this.mode==='lab'?1.05:1.02)*Math.min(1,w/h);
   gl.uniform1f(u.uX,this.x);gl.uniform1f(u.uY,this.y);gl.uniform1f(u.uAspect,w/h);gl.uniform1f(u.uScale,scale);
   gl.uniform1f(u.uMorph,this.morph);gl.uniform1f(u.uTension,parameterEnabled?this.displayTension:this.tension);gl.uniform1f(u.uLobes,this.lobes);gl.uniform1f(u.uWave,this.wave);gl.uniform1f(u.uRipple,this.ripple);gl.uniform3fv(u.uColor,this.color);gl.uniform1f(u.uMetal,this.metal);gl.uniform1f(u.uRoughness,this.roughness);gl.uniform1f(u.uLight,this.light);
-  if(roomEnabled){const root=getComputedStyle(document.documentElement),background=this.mode==='hero'?getComputedStyle(document.body).backgroundColor:getComputedStyle(this.canvas.parentElement).backgroundColor;gl.uniform3fv(u.uRoom,cssLinear(background));gl.uniform3fv(u.uAccent,cssLinear(root.getPropertyValue('--accent')));}
+  if(roomEnabled){const colours=roomNow(this,performance.now());gl.uniform3fv(u.uRoom,colours.room);gl.uniform3fv(u.uAccent,colours.accent);}
   if(constructionEnabled){const b=this.construction;gl.uniform1f(u.uBuildShape,b.shape);gl.uniform1f(u.uSweep,b.sweep);gl.uniform1f(u.uRadius,b.radius);gl.uniform1f(u.uModulation,b.modulation);gl.uniform1f(u.uProcedural,b.phase!=='settled'||this.term!==0?1:0);gl.uniform1f(u.uTerm,this.term);gl.uniform1f(u.uCurveMode,0);gl.uniform1f(u.uCurveAlpha,b.curveAlpha);}
   if(castEnabled){gl.uniform1i(u.uCastField,1);gl.uniform1f(u.uCastActive,this.castFront.active?1:0);if(this.castFront.active){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,sharedRenderer.castTexture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,this.castFront.size,2,0,gl.RGBA,gl.UNSIGNED_BYTE,this.castFront.data);gl.uniform1i(u.uCastField,1);gl.activeTexture(gl.TEXTURE0);}}
   if(shadowEnabled){gl.uniform1f(u.uPass,0);sharedRenderer.shadow.draw(this,scale);}
@@ -704,7 +734,7 @@ const constructionStudy=constructionEnabled&&constructionCanvas?new Sculpture(co
 const allSculptures=[hero,lab,...previews,...(constructionStudy?[constructionStudy]:[])];
 if(constructionStudy){
  const region=document.querySelector('#construction-study'),slider=document.querySelector('#construction-progress'),label=document.querySelector('#construction-label');region.hidden=false;
- const readout=()=>{const p=constructionStudy.scrubValue??1;const text=p<200/920?'Generating curve':p<700/920?'Sweeping the tube':p<1?'Radius modulation':'Finished surface';slider.value=String(Math.round(p*100));slider.setAttribute('aria-valuetext',text);label.textContent=text;};
+ const readout=()=>{const p=constructionStudy.scrubValue??1;const text=p<200/920?'Generating curve':p<700/920?'Sweeping the tube':p<1?'Radius modulation':'Finished surface';slider.value=String(Math.round(p*100));slider.style.setProperty('--fill',Math.round(p*100)+'%');slider.setAttribute('aria-valuetext',text);label.textContent=text;};
  constructionStudy.onConstructionFrame=()=>{if(!constructionStudy.scrubbing)constructionStudy.scrubValue=constructionStudy.construction.phase==='settled'?1:Math.min(1,Math.max(0,(performance.now()-constructionStudy.construction.start)/920));readout();};
  let arrived=false,pointer=false;
  new IntersectionObserver(([e])=>{if(!e.isIntersecting||arrived)return;arrived=true;if(!reducedMotion.matches){constructionStudy.construction.seek(0);constructionStudy.construction.phase='assemble';constructionStudy.construction.start=performance.now();constructionStudy.request();}},{threshold:.3}).observe(region);

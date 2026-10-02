@@ -269,3 +269,26 @@ Every range below has n=3 runs; GPU parenthetical counts are draw samples in run
 - [WebGL2 poster](tests/results/final-poster-webgl2.png) and [WebGL1 poster](tests/results/final-poster-webgl1.png)
 
 **Still unverified / external limits:** native reduced-motion media emulation (mock state tests pass), actual screen-reader output, mobile Safari and other GPUs, a shared link on another machine, and owner acceptance of feel/appearance. Browser security policy explicitly blocked `file://` navigation; no alternate surface or workaround was used. The self-contained build exists and the diagnostic uses that same inlined application, but direct-from-disk launch is not claimed tested. Nothing was deployed or pushed to the Desktop source checkout.
+
+## Review of the depth pass and fixes (2026-10-02)
+
+The depth pass was reviewed by running the build, then merged. With no `layers` flag the output is unchanged: eight fixed-pose framebuffer hashes (hero ×2, previews ×3, studio ×3) equal those of `3781ea5`, before and after the fixes below.
+
+| Before | After | Why |
+| --- | --- | --- |
+| The hero shadow ended in a hard vertical edge where its canvas ends | The shadow composite fades over the outer 12% of the view | A long shadow should dissolve, not be cut. |
+| With `construction` on, every studio shape change retracted the object and rebuilt it over 1160ms. Typing "sculpture" one letter per 233ms left it less than half built in 125 of 164 frames | The studio keeps the continuous morph; the hero and the construction study keep the construction event. Same test: 0 of 126 frames | The studio object must stay present while a word is typed. |
+| Construction scrubber was a native range input, 16px tall | It uses the studio slider styling, 44px tall, with the accent fill | One slider in the system, touch target met. |
+| Equation-term buttons were 47×21px targets | Same visual size, 44px-tall target through a pseudo-element | Touch target met without disturbing the line. |
+| With `room` on, every draw read computed style two or three times | Room colours come from token tables and are eased in JavaScript; a test fails if drawing reads computed style | Removes the only call tied to the 12–17ms CPU draws recorded during material changes with `room` on. |
+| The construction study was lit by a black room (its parent has no background) | It is lit by the page tint | The reflection should match where the object stands. |
+
+**Frame delivery: what the recorded data supports.** Re-reading the raw intervals of the `0ffb4a9` batch without assuming a refresh rate:
+
+- Hitches appear in the plain rotation segment of the baseline too (0–7 intervals over 50ms per two seconds, 33–827ms spent in stalls, n=3), while the same runs record a CPU draw median of 0.10ms and a GPU median near 0.7ms. The renderer's own work cannot produce those stalls; they are the noise floor of that session, which was driven by browser automation.
+- "Slow intervals" in the earlier report counts ordinary 60Hz frames, because the display alternated between about 60 and 120Hz. The report now adds counts that do not depend on the refresh rate.
+- Two costs stood out with non-overlapping ranges across three runs: CPU draw p95 of 11.6–17.3ms during material changes whenever `room` was on (0.3–2.3ms otherwise), and 5.2–9.4ms during twist whenever `shadow` was on (0.2–3.9ms otherwise).
+
+**Measured here (same machine, CPU timing in a hidden tab, so no frames):** the shadow support probe takes 0.3–0.5ms per call (300 calls per case, all three shapes, settled and under construction), and a full style recalculation at each of 24 steps of the page colour crossfade takes about 1.3ms (median; p95 about 2ms; 236 elements; six repetitions). Neither reproduces the 5–17ms recorded under automation. The style reads were removed from drawing anyway; the support probe was left as it is.
+
+**Not established:** whether a visitor sees dropped frames. No measurement exists from an ordinary visible browser window. To take one, open `http://127.0.0.1:4173/tests/perf.html?layers=none&batch=1` in a normal Chrome window, leave it in front for about five minutes, then run `npm run report`.

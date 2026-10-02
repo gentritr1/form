@@ -14,3 +14,7 @@ FORM-portfolio-project.zip
 .openai/
 outputs/
 work/
+
+# Raw browser records written by the diagnostic page; summarise with `npm run report`
+tests/results/form-*.json
+tests/results/frames-*.png

@@ -1,4 +1,6 @@
-# Final visible-browser measurements
+# Visible-browser measurements at commit 0ffb4a9
+
+Historical record. These numbers describe the renderer as it was at commit `0ffb4a9`, before the review fixes. The raw records linked below are no longer in the working tree; read them with `git show 0ffb4a9:tests/results/<file>`. New runs are summarised in `MEASUREMENTS.md` by `npm run report`.
 
 Executed in Chrome 152, Apple M1 Pro, macOS 26.5.2. Comparable set: 1800 × 875 CSS pixels, DPR 1, visible throughout each accepted run. Three ten-second samples per configuration; five two-second segments per sample. Every range below has n=3 runs. Timer-query overhead is included.
 
