@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server.mjs",
-    "check": "node --check dist/app.js && node --check server.mjs && node --check build.mjs && node --check tests/perf.js && node tests/renderer.cjs && node tests/perf-metrics.test.cjs && node tests/shared-renderer.cjs && node tests/shadow.cjs && node tests/construction.cjs && node tests/cast-front.cjs && node tests/tokens.cjs && node tests/review-fixes.cjs",
+    "check": "node --check dist/app.js && node --check server.mjs && node --check build.mjs && node --check stamp.mjs && node --check tests/perf.js && node tests/renderer.cjs && node tests/perf-metrics.test.cjs && node tests/shared-renderer.cjs && node tests/shadow.cjs && node tests/construction.cjs && node tests/cast-front.cjs && node tests/tokens.cjs && node tests/review-fixes.cjs && node tests/site.mjs",
     "build": "node build.mjs",
     "report": "node tests/summarize-results.mjs"
   }

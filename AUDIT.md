@@ -316,3 +316,14 @@ Checked by execution: with no parameter, six views available, WebGL2, no console
 
 Not checked: a device where the depth pass actually fails to start (the fallback was triggered by hand), phones, Safari and Firefox.
 
+## Deploy caching and hashed assets (2026-10-02)
+
+| Before | After | Why |
+| --- | --- | --- |
+| `dist/` deployed as-is: `styles.css`, `app.js` and the image had fixed names and no cache headers | `npm run build` writes `public/` with `static/<name>.<10-hex content hash>.<ext>`; the page references only those | A hashed name can be cached for a year without ever serving a stale file. |
+| No `vercel.json` | Build command, output folder, `immutable` one-year caching for `/static/*`, always-revalidate for the page with a long CDN lifetime | A repeat visit drops from four requests to one. |
+
+Checked by execution: `tests/site.mjs` (three hashed files, hash equals content, page references only hashed files, page otherwise identical to `dist/index.html`, each header rule matches a real path, exactly one rule per path; breaking a rule's pattern fails the test); the built `public/` served locally loads its three assets with status 200, renders six sculptures and logs no errors.
+
+Not checked: the headers as Vercel actually serves them. The repository is not connected to a Vercel project and nothing has been deployed, so `Cache-Control` and `x-vercel-cache` on the live site are unobserved. The commands for that check are in the README.
+

@@ -10,7 +10,7 @@ Node 18 or newer. No installation or runtime dependencies.
 npm run dev
 ```
 
-Open http://127.0.0.1:4173. You can also open the self-contained `FORM.html` directly in a WebGL-enabled browser. Deploy `dist` to a static host.
+Open http://127.0.0.1:4173. You can also open the self-contained `FORM.html` directly in a WebGL-enabled browser. To deploy, see "Deploy" below.
 
 ```sh
 npm run check
@@ -41,6 +41,30 @@ Regenerates the self-contained `FORM.html` from the editable source.
 - A placard button component, segmented object/material controls (native radios), accent-filled sliders, and an icon theme toggle.
 - Remembered theme choice, visible focus, reduced motion, context recovery, and offscreen/background suspension.
 
+## Deploy
+
+```sh
+npm run build
+```
+
+Besides `FORM.html`, this writes `public/`: `index.html` plus `static/`, where the stylesheet, script and image are renamed to include a hash of their content (for example `static/app.2a09bd22d5.js`). `public/` is generated and not committed. Edit `dist/`, never `public/`.
+
+`vercel.json` tells Vercel to run that build and serve `public/`, with two cache rules:
+
+- `/static/*`: `Cache-Control: public, max-age=31536000, immutable`. Safe because a changed file gets a new name.
+- `/` and `/index.html`: browsers always revalidate (`max-age=0, must-revalidate`); Vercel's CDN keeps the page (`Vercel-CDN-Cache-Control`) until the next deploy replaces it.
+
+Requests per visit: a first visit makes four (page, stylesheet, script, and the image once it scrolls near). A repeat visit makes one, the page revalidation; before this, all four were revalidated on every visit, and each revalidation is a billed edge request even when the answer is "not modified". The target is edge requests and repeat-visit bandwidth; there are no functions, image transformations or ISR.
+
+After the first deploy, confirm the headers on the live site (replace the host and the hashed name with the real ones):
+
+```sh
+curl -sI https://YOUR-SITE.vercel.app/ | grep -i "cache-control\|x-vercel-cache"
+curl -sI https://YOUR-SITE.vercel.app/static/app.2a09bd22d5.js | grep -i "cache-control\|x-vercel-cache"
+```
+
+Any other static host works too: run the build and upload `public/`.
+
 ## Edit
 
 - `dist/index.html`: copy, structure, and semantics.
@@ -48,7 +72,8 @@ Regenerates the self-contained `FORM.html` from the editable source.
 - `dist/app.js`: geometry, shaders, rendering lifecycle, and interactions.
 - `dist/assets/material-dreams.jpg`: generated editorial artwork.
 - `tests/renderer.cjs`: mocked state/lifecycle checks, including gestures and export recovery.
-- `build.mjs`: reproducible standalone packaging.
+- `build.mjs`: reproducible standalone packaging; calls `stamp.mjs` to write the deployable `public/` with content-hashed assets.
+- `vercel.json`: build command, output folder and cache headers.
 - `DESIGN.md`: visual and motion decisions.
 - `AUDIT.md`: anti-pattern findings and refinements.
 

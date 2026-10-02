@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { buildSite } from './stamp.mjs';
 const root = new URL('./', import.meta.url);
 const read = path => readFile(new URL(path, root), 'utf8');
 const [html, css, js, image] = await Promise.all([
@@ -19,3 +20,6 @@ const sourceHash=createHash('sha256').update(js).digest('hex');
 const diagnostic = standalone.replace('</body>', () => '<script>const FORM_SOURCE_SHA256='+JSON.stringify(sourceHash)+';\n' + metrics + '\n' + perf + '</script></body>');
 await writeFile(new URL('tests/perf.html', root), diagnostic);
 console.log('Built tests/perf.html (' + Buffer.byteLength(diagnostic) + ' bytes).');
+// Deployable site with content-hashed assets (what Vercel serves; see vercel.json).
+const site = await buildSite(root, new URL('public/', root));
+console.log('Built public/ (' + site.join(', ') + ').');
