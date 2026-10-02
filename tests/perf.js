@@ -14,6 +14,7 @@
  <label>Refresh Hz <input id="perf-hz" type="number" min="24" max="360" placeholder="auto estimate"></label>
  <button id="perf-run">Run 3 × 10 seconds</button><button id="perf-pixels">Fixed-pose hashes</button>
  <button id="perf-shadow">Shadow light study</button>
+ <button id="perf-room">Material / room grid</button>
  <button id="perf-save" disabled>Save results JSON</button></div>
  <div id="perf-status" role="status">Keep this tab foreground at a fixed window size. Do not interact during a run.</div>
  <details><summary>Results</summary><pre id="perf-results"></pre></details>`;
@@ -32,7 +33,7 @@
  });
  const frames=async n=>{for(let i=0;i<n;i++)await frame();};
  function pauseAll(){for(const s of allSculptures){s.paused=true;s.hovered=false;s.velocity=0;cancelAnimationFrame(s.frame);s.frame=0;s.last=0;}updatePause();}
- function ready(){visible();if(layers.some(x=>!['shared','direct','shadow','adaptive'].includes(x)))throw Error('Unsupported layers: '+layers.join(','));if(allSculptures.some(s=>!s.available))throw Error('All five canvases must be available.');}
+ function ready(){visible();if(layers.some(x=>!['shared','direct','shadow','adaptive','room'].includes(x)))throw Error('Unsupported layers: '+layers.join(','));if(allSculptures.some(s=>!s.available))throw Error('All five canvases must be available.');}
  const viewport=()=>({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,screenWidth:screen.width,screenHeight:screen.height});
  function reset(s,shape,material){
   s.select(shape);s.morph=1;s.setMaterial(material);s.color=[...materials[material].color];s.metal=materials[material].metal;s.roughness=materials[material].roughness;s.materialProgress=1;
@@ -135,5 +136,23 @@
   const previous=document.getElementById('perf-study');if(previous)previous.remove();
   const img=document.createElement('img');img.id='perf-study';img.alt='Same sculpture under three key-light directions: 0, 90 and 180 degrees';img.src=canvas.toDataURL('image/png');img.style.cssText='display:block;max-width:100%;height:auto';panel.append(img);
   status.textContent='Three real rendered silhouettes; same pose and material. The poster uses this same copyTo path.';
+ });
+ $('perf-room').onclick=()=>guard(async()=>{
+  pauseAll();reset(hero,0,0);hero.x=hero.tx=-.38;hero.y=hero.ty=.35;
+  const canvas=document.createElement('canvas');canvas.width=1200;canvas.height=1800;const ctx=canvas.getContext('2d');
+  const priorTheme=document.documentElement.dataset.theme,priorMaterial=document.documentElement.dataset.material;
+  try{
+   for(let row=0;row<6;row++){
+    const theme=row<3?'light':'dark',material=materialSlugs[row%3];document.documentElement.dataset.theme=theme;document.documentElement.dataset.material=material;
+    const start=await frame();while(await frame()-start<500){} // settle the existing room token crossfade, not renderer motion
+    const css=getComputedStyle(document.documentElement);ctx.fillStyle=css.getPropertyValue('--bg');ctx.fillRect(0,row*300,1200,300);
+    for(let column=0;column<3;column++){
+     reset(hero,0,column);hero.copyTo(ctx,column*400,row*300,400,260);
+     ctx.fillStyle=css.getPropertyValue('--text');ctx.font='17px Helvetica';ctx.fillText(materials[column].name+' / '+theme+' '+material,column*400+14,row*300+286);
+    }
+   }
+  }finally{if(priorTheme)document.documentElement.dataset.theme=priorTheme;else delete document.documentElement.dataset.theme;if(priorMaterial)document.documentElement.dataset.material=priorMaterial;roomChanged();}
+  const previous=document.getElementById('perf-study');if(previous)previous.remove();const img=document.createElement('img');img.id='perf-study';img.alt='Three materials under all six theme and page-material room states';img.src=canvas.toDataURL('image/png');img.style.cssText='display:block;max-width:100%;height:auto';panel.append(img);
+  status.textContent='18 real rendered frames: three object materials × six room states. Same geometry and pose.';
  });
 })();

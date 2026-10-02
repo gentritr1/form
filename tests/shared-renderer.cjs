@@ -10,6 +10,8 @@ ${marker}`);
 vm.runInNewContext(fixture,{require,__dirname,console,setImmediate,process});
 const directFixture=fixture.replace("location.search='?layers=shared';","location.search='?layers=direct';context.innerWidth=1800;context.innerHeight=875;");
 vm.runInNewContext(directFixture,{require,__dirname,console,setImmediate,process});
+const roomFixture=directFixture.replace("location.search='?layers=direct';","location.search='?layers=room';context.getComputedStyle=()=>({backgroundColor:'rgb(217,224,229)',getPropertyValue:k=>k==='--bg'?'#ECE9E4':'#A04F2B'});");
+vm.runInNewContext(roomFixture,{require,__dirname,console,setImmediate,process});
 const prefix=fixture.slice(0,fixture.indexOf('tick(4); assert'));
 vm.runInNewContext(prefix+`
 const manager=vm.runInContext('sharedRenderer',context);

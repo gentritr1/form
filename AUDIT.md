@@ -147,3 +147,23 @@ Terminal intervals for copy: 571.2 / 16.5 / 226.9 ms; direct: 31.7 / 8.4 / 42.6 
 | Twist | 105–125 / 240.964 | 15.9–16.6 | 32.4–34 | 59.6–158.3 | 68–71 | 1.926–2.341 (118/105/125) |
 
 Terminal intervals: 66.6 / 233.3 / 16.7 ms. These measurements show a GPU cost increase for shadows beyond the direct renderer's median variation, and slower twist delivery. They do not support claiming the shadow is free. The separate `adaptive` flag adds an eight-sample resolution controller with a 60Hz budget, DPR cap steps 1.5→1.25→1→0.75 and one sharp redraw when all visible motion settles; its combined cost is not yet measured at this checkpoint.
+
+## Depth pass — package 3 checkpoint
+
+**Meaning:** reflected light belongs to the room, and each surface responds according to its material.
+
+**Implemented; inferred from shader construction.** The procedural rig has a broad upper-left key (cosine exponent 9; neutral-warm, slightly room-tinted), smaller right fill (32; cool-neutral), rear-left rim (23; page-accent plus room colour), and broad floor bounce (9; room colour). No downloaded environment. Copper uses anisotropic GGX with roughness axes 0.45× / 1.6× aligned to the generating parameter, and anisotropic Smith masking. Chrome varies roughness by ±10% spatially. Porcelain combines its diffuse/rough body with a Schlick clearcoat environment reflection. Fresnel splits the direct diffuse/specular energy; the coat attenuates the body before adding its reflection. The environment is an analytic studio approximation without a physically convolved roughness mip chain; clearcoat environment weighting and multiple-scattering compensation are approximate. It is not a spectral or fully energy-integrated material model.
+
+**Executed-and-observed.** Real Chrome compiles and renders the room shaders. The `Material / room grid` diagnostic rendered and displayed all 18 combinations (three materials × six theme/page-material states) at fixed geometry/pose. The copper-tinted dark room produces a warm reflection on chrome; porcelain retains a diffuse body. Owner acceptance of the appearance remains open. The original assertions also pass under the room flag with a mocked computed-style source; this checks state contracts, not shader appearance.
+
+**Executed-and-observed.** Same machine, viewport and script, `?layers=room`, n=3. Estimated refresh 119.0476 Hz; 238.095 expected callbacks per 2-second segment. No shadow or adaptive-resolution layer enabled:
+
+| Segment | Delivered / expected | Median ms | p95 ms | Worst ms | Slow count | GPU median ms (sample counts) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Rotation | 223–237 / 238.095 | 8.3–8.4 | 10.1–10.4 | 17.6–143.3 | 2–10 | 0.781–0.930 (224/225/238) |
+| Shape | 237–239 / 238.095 | 8.3–8.4 | 10.1–10.2 | 10.4–24.6 | 0–2 | 0.756–0.776 (237/238/239) |
+| Material | 192–202 / 238.095 | 8.4–8.6 | 17.6–24.7 | 57.5–74.4 | 17–28 | 0.866–0.937 (202/192/195) |
+| Cast | 188–232 / 238.095 | 8.4–8.5 | 10.4–24.9 | 34.7–215 | 8–21 | 0.833–1.021 (73/80/47) |
+| Twist | 151–194 / 238.095 | 8.5–9.2 | 18.2–25.8 | 34.3–82.7 | 34–62 | 1.004–1.033 (194/151/183) |
+
+Terminal intervals: 8.9 / 33.7 / 9.5 ms. These ranges overlap direct-renderer timing in several segments, so no small speed change is claimed. Material and twist GPU medians are higher than direct in this sample. The measurement preceded an additional degenerate-tangent guard; final combined measurements must cover the finished version. Background-specific shadow review, real context loss/restoration and the full responsive matrix remain pending.
