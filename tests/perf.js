@@ -13,6 +13,7 @@
  <div class="perf-controls"><label>Machine <input id="perf-machine" placeholder="Model / chip / OS"></label>
  <label>Refresh Hz <input id="perf-hz" type="number" min="24" max="360" placeholder="auto estimate"></label>
  <button id="perf-run">Run 3 × 10 seconds</button><button id="perf-pixels">Fixed-pose hashes</button>
+ <button id="perf-shadow">Shadow light study</button>
  <button id="perf-save" disabled>Save results JSON</button></div>
  <div id="perf-status" role="status">Keep this tab foreground at a fixed window size. Do not interact during a run.</div>
  <details><summary>Results</summary><pre id="perf-results"></pre></details>`;
@@ -31,7 +32,7 @@
  });
  const frames=async n=>{for(let i=0;i<n;i++)await frame();};
  function pauseAll(){for(const s of allSculptures){s.paused=true;s.hovered=false;s.velocity=0;cancelAnimationFrame(s.frame);s.frame=0;s.last=0;}updatePause();}
- function ready(){visible();if(layers.length)throw Error('No depth layers implemented yet; unsupported flags: '+layers.join(','));if(allSculptures.some(s=>!s.available))throw Error('All five canvases must be available.');}
+ function ready(){visible();if(layers.some(x=>!['shared','direct','shadow','adaptive'].includes(x)))throw Error('Unsupported layers: '+layers.join(','));if(allSculptures.some(s=>!s.available))throw Error('All five canvases must be available.');}
  const viewport=()=>({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,screenWidth:screen.width,screenHeight:screen.height});
  function reset(s,shape,material){
   s.select(shape);s.morph=1;s.setMaterial(material);s.color=[...materials[material].color];s.metal=materials[material].metal;s.roughness=materials[material].roughness;s.materialProgress=1;
@@ -48,7 +49,11 @@
   let segment=-1,disjoint=false;
   const draws=labels.map(()=>({hero:0,lab:0,preview:0})),gpu=labels.map(()=>[]),pending=[],restore=[],contexts=new Map();
   for(const s of allSculptures){
-   const gl=s.gl;if(!contexts.has(gl))contexts.set(gl,gl.getExtension('EXT_disjoint_timer_query'));
+   const gl=s.gl;if(!contexts.has(gl)){
+    let ext=gl.getExtension('EXT_disjoint_timer_query');
+    if(!ext){const e2=gl.getExtension('EXT_disjoint_timer_query_webgl2');if(e2)ext={TIME_ELAPSED_EXT:e2.TIME_ELAPSED_EXT,GPU_DISJOINT_EXT:e2.GPU_DISJOINT_EXT,QUERY_RESULT_AVAILABLE_EXT:gl.QUERY_RESULT_AVAILABLE,QUERY_RESULT_EXT:gl.QUERY_RESULT,createQueryEXT:()=>gl.createQuery(),beginQueryEXT:(...a)=>gl.beginQuery(...a),endQueryEXT:(...a)=>gl.endQuery(...a),getQueryObjectEXT:(...a)=>gl.getQueryParameter(...a),deleteQueryEXT:q=>gl.deleteQuery(q)};}
+    contexts.set(gl,ext);
+   }
    const ext=contexts.get(gl),original=s.draw;
    s.draw=function(...args){
     if(segment<0)return original.apply(this,args);draws[segment][this.mode]++;
@@ -119,8 +124,16 @@
      renderer:debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)});
    }finally{s.draw(w||400,h||300);}
   }
-  result={schema:'form-pixels-v1',baseCommit:'3781ea5',date:new Date().toISOString(),valid:true,documentHidden:document.hidden,userAgent:navigator.userAgent,viewport:viewport(),layers:[],hashAlgorithm:'FNV-1a 32-bit RGBA bytes, bottom row first',hashes};
+  result={schema:'form-pixels-v1',baseCommit:'3781ea5',date:new Date().toISOString(),valid:true,documentHidden:document.hidden,userAgent:navigator.userAgent,viewport:viewport(),layers,hashAlgorithm:'FNV-1a 32-bit RGBA bytes, bottom row first',hashes};
   status.textContent='Five framebuffer hashes captured. Save before renderer changes.';show();
  });
  $('perf-save').onclick=()=>{if(!result)return;const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=result.schema+'-'+Date.now()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+ $('perf-shadow').onclick=()=>guard(async()=>{
+  pauseAll();reset(lab,0,0);lab.x=lab.tx=-.38;lab.y=lab.ty=.35;setScene('silver');
+  const canvas=document.createElement('canvas');canvas.width=1200;canvas.height=400;const ctx=canvas.getContext('2d');ctx.fillStyle=scenes.silver.bg;ctx.fillRect(0,0,1200,400);
+  for(let i=0;i<3;i++){lab.light=lab.targetLight=(i*90-45)*Math.PI/180;lab.copyTo(ctx,i*400,0,400,340);ctx.fillStyle=scenes.silver.text;ctx.font='20px Helvetica';ctx.fillText('Light '+(i*90)+'°',i*400+20,380);}
+  const previous=document.getElementById('perf-study');if(previous)previous.remove();
+  const img=document.createElement('img');img.id='perf-study';img.alt='Same sculpture under three key-light directions: 0, 90 and 180 degrees';img.src=canvas.toDataURL('image/png');img.style.cssText='display:block;max-width:100%;height:auto';panel.append(img);
+  status.textContent='Three real rendered silhouettes; same pose and material. The poster uses this same copyTo path.';
+ });
 })();

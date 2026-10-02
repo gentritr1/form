@@ -113,3 +113,37 @@ Every range has n=3 runs. Run 1 also has a 1057.8 ms terminal interval crossing 
 **Executed-and-observed.** Five 400 × 300 synchronous draw/readPixels FNV-1a hashes exactly match the owner's reference hashes: `dcbc4c2a`, `577ba6bf`, `937de9cc`, `ce2785be`, `f72ad12a`. GPU: ANGLE Metal Renderer / Apple M1 Pro. These are the local before-hashes for subsequent comparisons.
 
 **Inferred from reading / limits.** Sharing contexts may reduce resource duplication; its timing benefit is not established. Large baseline variation prevents claims of small performance gains. No feel/beauty claim is made. Packages 1–6 and the full responsive/theme matrix are not yet validated at this checkpoint.
+
+## Depth pass — architecture comparison and shadow checkpoint
+
+**Executed-and-observed.** All five reference GPU hashes also match with `?layers=shared` (offscreen WebGL2 plus 2D copies) and `?layers=direct` (one fixed WebGL2 canvas with scissored viewports). The original assertion suite is run verbatim under both flags by `tests/shared-renderer.cjs`; it passes, including export state and determinism. The original assertion file is untouched. New tests cover shared resource ownership, all-client loss/restoration, idle suspension, and adaptive resolution bounds/settling.
+
+**Decision from measurement.** Reject the 2D copy architecture for normal use; retain its flag for comparison. Select direct rendering. It preserves each original canvas as a transparent keyboard/pointer target, draws within its DOM rectangle, and uses a retained drawing buffer so a resting preview is not cleared when another object animates. Scroll/resize invalidate the placement and redraw visible views. The shared scene program and static meshes are uploaded once; interrupted morphs use one reusable scratch buffer. WebGL1 with OES VAOs (or explicit attribute binding when absent) is the fallback, not yet executed on a real WebGL1-only device.
+
+**Executed-and-observed.** Same machine/browser/1800×875/DPR2 and script, n=3/configuration. Refresh calibration for both candidates was approximately 120.482 Hz, or 240.964 expected callbacks per 2-second segment. The following tuples are ranges over the three runs: delivered callbacks; median ms; p95 ms; worst ms; slow callback count.
+
+| Segment | 2D copy | Direct |
+| --- | --- | --- |
+| Rotation | 77–162; 8.4–8.6; 25.4–142.7; 81.7–407.2; 15–27 | 185–238; 8.3; 10–32.3; 15.6–98.1; 1–15 |
+| Shape | 39–113; 8.5–16.4; 41.5–250.5; 234.2–692; 22–28 | 235–239; 8.3; 9.8–10.2; 14–25; 1–4 |
+| Material | 3–22; 34.5–540.7; 399.6–1433.8; 431.7–1433.8; 2–21 | 168–199; 8.4; 23.3–41; 57.8–116.7; 18–25 |
+| Cast | 3–122; 8.4–616.1; 51.8–891.8; 275.9–891.8; 3–17 | 220–232; 8.3–8.4; 10.4–15.9; 18.3–49.2; 8–17 |
+| Twist | 10–58; 16.5–168.7; 69–526.6; 299.2–526.6; 10–35 | 135–190; 8.5–8.8; 18.5–25.1; 35.2–267; 34–44 |
+
+Terminal intervals for copy: 571.2 / 16.5 / 226.9 ms; direct: 31.7 / 8.4 / 42.6 ms. Direct GPU median ranges (sample counts in run order): rotation 0.780–0.850 ms (236/186/239), shape 0.710–0.768 (239/235/235), material 0.765–0.804 (188/199/168), cast 0.712–0.854 (70/71/84), twist 0.925–0.932 (135/190/183). The direct-versus-copy difference exceeds the observed range overlap in several segments; a small percentage speedup over the original baseline is not claimed.
+
+**Package 2 meaning:** the actual silhouette and key light give the object a ground relationship. Construction: project the deformed geometry along its shading key onto a plane 0.025 scene units below its lowest vertex; rasterize a 256×256 alpha mask; composite a 25-tap Gaussian approximation at 28% opacity before the surface. No painted blob. The CPU height bound is cached when pose/twist/morph do not change it. The mask and composite are transparent over each existing background. Print uses the same passes at its export size; context restoration recreates the shadow resources.
+
+**Executed-and-observed.** Shadow state tests pass for finite/cached bounds across 27 shape/twist/pose combinations, export pass inclusion, 1200×1500 dimensions and resource restoration. Real Chrome shader compilation succeeds and the shadow renders. The diagnostic `Shadow light study` control creates three actual rendered frames at 0/90/180 degrees through `copyTo`. Full visual acceptance, all-background review and downloaded PNG verification are still pending.
+
+**Executed-and-observed.** `?layers=shadow`, n=3, refresh estimate 120.482 Hz, expected 240.964 callbacks per 2 seconds; adaptive resolution was OFF for this measurement:
+
+| Segment | Delivered / expected | Median ms | p95 ms | Worst ms | Slow count | GPU median ms (sample counts) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Rotation | 231–237 / 240.964 | 8.3–8.4 | 9.9–10.2 | 16.8–34.1 | 3–6 | 1.545–1.613 (232/238/235) |
+| Shape | 215–223 / 240.964 | 8.4 | 15.8–16.3 | 33.3–82 | 12–14 | 1.584–1.664 (215/223/219) |
+| Material | 194–208 / 240.964 | 8.3–8.4 | 17–25.1 | 40.5–50.2 | 21–24 | 1.531–1.613 (208/194/198) |
+| Cast | 191–201 / 240.964 | 8.4 | 17.5–18.6 | 50.4–83.9 | 25–26 | 1.905–2.159 (51/57/67) |
+| Twist | 105–125 / 240.964 | 15.9–16.6 | 32.4–34 | 59.6–158.3 | 68–71 | 1.926–2.341 (118/105/125) |
+
+Terminal intervals: 66.6 / 233.3 / 16.7 ms. These measurements show a GPU cost increase for shadows beyond the direct renderer's median variation, and slower twist delivery. They do not support claiming the shadow is free. The separate `adaptive` flag adds an eight-sample resolution controller with a 60Hz budget, DPR cap steps 1.5→1.25→1→0.75 and one sharp redraw when all visible motion settles; its combined cost is not yet measured at this checkpoint.

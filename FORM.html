@@ -444,6 +444,10 @@ h1 { font-size: clamp(60px, 6.7vw, 96px); line-height: 1.04; letter-spacing: -.0
 'use strict';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
+// Empty layers is the frozen baseline. Each depth package remains independently comparable.
+const depthLayers=new Set(((typeof location.search==='string'?location.search:'').match(/[?&]layers=([^&]*)/)?.[1]||'').split(','));
+const shadowEnabled=depthLayers.has('shadow');
+const adaptiveEnabled=depthLayers.has('adaptive');
 const systemTheme = matchMedia('(prefers-color-scheme: dark)');
 const names = ['Trefoil', 'Orbit', 'Bloom'];
 const descriptions = ['One continuous curve. Three crossings.', 'A ring, lifted into a slow wave.', 'Eight lobes, folded from a sphere.'];
@@ -465,7 +469,7 @@ function syncThemeColor() {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', themeBackgrounds[dark ? 'dark' : 'light'][material]);
 }
-const vertexSource = `
+let vertexSource = `
 attribute vec3 aPosition, aNormal, aTarget, aTargetNormal;
 uniform float uX, uY, uAspect, uScale, uMorph, uTension, uLobes, uWave, uRipple;
 varying vec3 vNormal, vPosition, vLocal;
@@ -498,7 +502,7 @@ void main(){
  float z=5.9-p.z;
  gl_Position=vec4(p.x*3.05/uAspect,p.y*3.05,z*.97-.25,z);
 }`;
-const fragmentSource = `
+let fragmentSource = `
 precision highp float;
 varying vec3 vNormal,vPosition,vLocal;
 uniform vec3 uColor;
@@ -542,6 +546,10 @@ void main(){
  float occlusion=.78+.22*smoothstep(-1.2,.8,vPosition.y);color*=occlusion;
  gl_FragColor=vec4(pow(filmic(color),vec3(1./2.2)),1.);
 }`;
+if(shadowEnabled){
+ vertexSource=vertexSource.replace('varying vec3 vNormal, vPosition, vLocal;','uniform float uPass,uGround,uLight;\nvarying vec3 vNormal, vPosition, vLocal;').replace('vPosition=p;vNormal=',`if(uPass>.5){vec3 key=normalize(vec3(-2.*cos(uLight),3.,3.+sin(uLight)));p-=key*((p.y-uGround)/key.y);}\n vPosition=p;vNormal=`);
+ fragmentSource=fragmentSource.replace('uniform vec3 uColor;','uniform float uPass;\nuniform vec3 uColor;').replace('void main(){','void main(){\n if(uPass>.5){gl_FragColor=vec4(0.,0.,0.,1.);return;}');
+}
 const TAU = Math.PI * 2;
 // Cast a word: the same normalised word gives the same sculpture on every device.
 const sceneKeys = ['silver', 'sage', 'ink'];
@@ -622,6 +630,133 @@ function easeOut(progress) {
  }
  return 1-(1-t)**3;
 }
+// One invisible GPU canvas, immediately copied to visible 2D placeholders. The copy is
+// synchronous with each draw, so neither display nor poster needs preserveDrawingBuffer.
+class ResolutionBudget {
+ constructor(){this.value=1.5;this.average=0;this.samples=0;this.last=new Map();this.active=new Set();}
+ observe(client,time){
+  const previous=this.last.get(client);this.last.set(client,time);
+  if(previous===undefined||time<=previous)return false;
+  const interval=Math.min(250,time-previous);this.average=this.average?this.average*.8+interval*.2:interval;
+  if(++this.samples>=8&&this.average>1000/60&&this.value>.75){this.value=Math.max(.75,this.value-.25);this.samples=0;this.average=0;return true;}return false;
+ }
+ finish(client,moving){
+  if(moving)this.active.add(client);else{this.active.delete(client);this.last.delete(client);}
+  if([...this.active].some(s=>s.visible&&s.available))return false;
+  this.active.clear();this.last.clear();this.average=0;this.samples=0;
+  if(this.value!==1.5){this.value=1.5;return true;}return false;
+ }
+}
+class SharedRenderer {
+ constructor(){
+  this.canvas=document.createElement('canvas');this.clients=new Set();this.ready=false;
+  this.direct=depthLayers.has('direct')||shadowEnabled||adaptiveEnabled;this.live=false;this.layoutDirty=true;this.resolution=new ResolutionBudget();
+  const options={alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:this.direct};
+  this.gl=this.canvas.getContext('webgl2',options);
+  this.webgl2=!!this.gl;
+  if(!this.gl)this.gl=this.canvas.getContext('webgl',options);
+  if(this.direct){
+   this.canvas.setAttribute('aria-hidden','true');this.canvas.style.cssText='position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:1';document.body.append(this.canvas);
+   const invalidate=()=>{this.layoutDirty=true;for(const s of this.clients)s.request();};
+   window.addEventListener('scroll',invalidate,{passive:true});window.addEventListener('resize',invalidate);
+  }
+  this.canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();this.ready=false;for(const s of this.clients){cancelAnimationFrame(s.frame);s.frame=0;s.last=0;s.velocity=0;s.dragging=false;s.unavailable();}});
+  this.canvas.addEventListener('webglcontextrestored',()=>{
+   try{this.initialize();for(const s of this.clients){s.initialize();s.available=true;s.canvas.style.visibility='';const fallback=s.canvas.parentElement.querySelector('.fallback');if(fallback)fallback.hidden=true;s.syncAvailability();s.request();}}
+   catch(error){console.error('Shared renderer:',error.message);for(const s of this.clients)s.unavailable();}
+  });
+ }
+ initialize(){
+  if(this.ready)return;
+  const gl=this.gl;if(!gl)throw Error('WebGL is unavailable.');
+  const source=(text,vertex)=>this.webgl2?'#version 300 es\n'+text.replace(/attribute /g,'in ').replace(/varying /g,vertex?'out ':'in ').replace('precision highp float;','precision highp float;\nout vec4 fragmentColor;').replace(/gl_FragColor/g,'fragmentColor'):text;
+  const compile=(type,text)=>{const shader=gl.createShader(type);gl.shaderSource(shader,text);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;};
+  const vs=compile(gl.VERTEX_SHADER,source(vertexSource,true)),fs=compile(gl.FRAGMENT_SHADER,source(fragmentSource,false));
+  this.program=gl.createProgram();gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);
+  if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.program));
+  this.uniforms={};for(const n of ['uX','uY','uAspect','uScale','uMorph','uTension','uLobes','uWave','uRipple','uColor','uMetal','uRoughness','uLight'])this.uniforms[n]=gl.getUniformLocation(this.program,n);
+  if(shadowEnabled)for(const n of ['uPass','uGround'])this.uniforms[n]=gl.getUniformLocation(this.program,n);
+  this.attributes={};for(const n of ['aPosition','aNormal','aTarget','aTargetNormal'])this.attributes[n]=gl.getAttribLocation(this.program,n);
+  this.meshBuffers=new Map();
+  for(const mesh of meshes){const buffers={};for(const key of ['positions','normals']){buffers[key]=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffers[key]);gl.bufferData(gl.ARRAY_BUFFER,mesh[key],gl.STATIC_DRAW);}this.meshBuffers.set(mesh,buffers);}
+  this.index=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.index);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,meshes[0].indices,gl.STATIC_DRAW);
+  this.dynamic={positions:gl.createBuffer(),normals:gl.createBuffer()};this.dynamicMesh=null;
+  const ext=this.webgl2?null:gl.getExtension('OES_vertex_array_object');
+  this.vao=this.webgl2?gl.createVertexArray():ext?ext.createVertexArrayOES():null;
+  this.bindVAO=()=>{if(this.webgl2)gl.bindVertexArray(this.vao);else if(ext)ext.bindVertexArrayOES(this.vao);};
+  if(shadowEnabled)this.shadow=new ContactShadow(gl,this.webgl2);
+  gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(0,0,0,0);this.ready=true;
+ }
+ mesh(mesh){
+  if(this.meshBuffers.has(mesh))return this.meshBuffers.get(mesh);
+  if(this.dynamicMesh!==mesh){for(const key of ['positions','normals']){this.gl.bindBuffer(this.gl.ARRAY_BUFFER,this.dynamic[key]);this.gl.bufferData(this.gl.ARRAY_BUFFER,mesh[key],this.gl.DYNAMIC_DRAW);}this.dynamicMesh=mesh;}
+  return this.dynamic;
+ }
+ bind(s,w,h){
+  this.bindVAO();const from=this.mesh(s.currentMesh),to=this.mesh(s.targetMesh);
+  s.buffers={aPosition:from.positions,aNormal:from.normals,aTarget:to.positions,aTargetNormal:to.normals};
+  if(this.direct&&this.live){
+   const dpr=Math.min(devicePixelRatio||1,this.resolution.value),width=Math.round(innerWidth*dpr),height=Math.round(innerHeight*dpr);
+   if(this.canvas.width!==width||this.canvas.height!==height){this.canvas.width=width;this.canvas.height=height;this.layoutDirty=true;}
+   if(this.layoutDirty){this.gl.disable(this.gl.SCISSOR_TEST);this.gl.clear(this.gl.COLOR_BUFFER_BIT|this.gl.DEPTH_BUFFER_BIT);for(const client of this.clients){client.viewRect=client.canvas.getBoundingClientRect();client.request();}this.layoutDirty=false;}
+   const r=s.viewRect||s.canvas.getBoundingClientRect();
+   this.viewport=[Math.round(r.left*dpr),Math.round((innerHeight-r.top-r.height)*dpr),Math.round(r.width*dpr),Math.round(r.height*dpr)];
+   this.gl.enable(this.gl.SCISSOR_TEST);this.gl.scissor(...this.viewport);
+  }else{
+   this.gl.disable(this.gl.SCISSOR_TEST);this.viewport=[0,0,w,h];
+   if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
+   if(this.direct)this.layoutDirty=true;
+  }
+ }
+ present(s,w,h){if(!this.direct){s.display.clearRect(0,0,w,h);s.display.drawImage(this.canvas,0,0,w,h);}}
+}
+// Reduced-resolution actual silhouette projected along the same key used for shading.
+class ContactShadow {
+ constructor(gl,webgl2){
+  this.gl=gl;this.size=256;
+  this.texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.texture);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,this.size,this.size,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  for(const p of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,p,gl.LINEAR);
+  for(const p of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE);
+  this.fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,this.fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,this.texture,0);
+  if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('Shadow framebuffer unavailable.');gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  let vs='attribute vec2 aQuad;varying vec2 uv;void main(){uv=aQuad*.5+.5;gl_Position=vec4(aQuad,0.,1.);}';
+  let fs='precision highp float;varying vec2 uv;uniform sampler2D uMask;void main(){float alpha=0.;float total=0.;for(int x=-2;x<=2;x++){for(int y=-2;y<=2;y++){float weight=exp(-float(x*x+y*y)*.35);alpha+=texture2D(uMask,uv+vec2(float(x),float(y))*.008).a*weight;total+=weight;}}gl_FragColor=vec4(0.,0.,0.,alpha/total*.28);}';
+  if(webgl2){vs='#version 300 es\n'+vs.replace('attribute','in').replace('varying','out');fs='#version 300 es\n'+fs.replace('varying','in').replace('precision highp float;','precision highp float;out vec4 pixel;').replace('texture2D','texture').replace('gl_FragColor','pixel');}
+  const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;};
+  this.program=gl.createProgram();const vertex=compile(gl.VERTEX_SHADER,vs),fragment=compile(gl.FRAGMENT_SHADER,fs);gl.attachShader(this.program,vertex);gl.attachShader(this.program,fragment);gl.linkProgram(this.program);gl.deleteShader(vertex);gl.deleteShader(fragment);
+  if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.program));
+  this.quad=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+  this.attribute=gl.getAttribLocation(this.program,'aQuad');this.sampler=gl.getUniformLocation(this.program,'uMask');
+ }
+ ground(s,scale){
+  const key=[s.currentMesh,s.targetMesh,s.x,s.morph,s.tension,s.lobes,s.wave,s.ripple,scale];
+  if(s.groundKey&&key.every((v,i)=>v===s.groundKey[i]))return s.groundY;
+  const a=s.currentMesh.positions,b=s.targetMesh.positions,cx=Math.cos(s.x),sx=Math.sin(s.x);let min=Infinity;
+  for(let i=0;i<a.length;i+=3){
+   let x=a[i]+(b[i]-a[i])*s.morph,y=a[i+1]+(b[i+1]-a[i+1])*s.morph,z=a[i+2]+(b[i+2]-a[i+2])*s.morph;
+   const angle=y*s.tension*.85,c=Math.cos(angle),sine=Math.sin(angle),dx=c*x+sine*z;z=-sine*x+c*z;x=dx;
+   let fade=Math.max(0,Math.min(1,(Math.hypot(x,z)-.03*s.lobes)/.35));fade=fade*fade*(3-2*fade);
+   const ripple=1+s.tension*.07*s.ripple*fade*Math.sin(y*s.wave+Math.atan2(z,x)*s.lobes);
+   min=Math.min(min,(y*cx-z*sx)*ripple*scale);
+  }
+  s.groundKey=key;s.groundY=min-.025;return s.groundY;
+ }
+ draw(s,scale){
+  const gl=this.gl,manager=sharedRenderer,v=manager.viewport;
+  gl.disable(gl.SCISSOR_TEST);gl.disable(gl.DEPTH_TEST);gl.bindFramebuffer(gl.FRAMEBUFFER,this.fbo);gl.viewport(0,0,this.size,this.size);gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.uniform1f(s.uniforms.uGround,this.ground(s,scale));gl.uniform1f(s.uniforms.uPass,1);gl.drawElements(gl.TRIANGLES,meshes[0].indices.length,gl.UNSIGNED_SHORT,0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(...v);gl.enable(gl.SCISSOR_TEST);gl.scissor(...v);
+  // Bind no VAO while setting up the composite, preserving the shared geometry VAO.
+  if(manager.webgl2)gl.bindVertexArray(null);else{const ext=gl.getExtension('OES_vertex_array_object');if(ext)ext.bindVertexArrayOES(null);}
+  gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);gl.enableVertexAttribArray(this.attribute);gl.vertexAttribPointer(this.attribute,2,gl.FLOAT,false,0,0);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.sampler,0);
+  gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.drawArrays(gl.TRIANGLES,0,6);gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
+  manager.bindVAO();gl.useProgram(s.program);
+  for(const n of Object.keys(s.buffers)){const loc=s.attributes[n];gl.bindBuffer(gl.ARRAY_BUFFER,s.buffers[n]);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);}gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,s.index);gl.uniform1f(s.uniforms.uPass,0);
+ }
+}
+const sharedRenderer=depthLayers.has('shared')||depthLayers.has('direct')||shadowEnabled||adaptiveEnabled?new SharedRenderer():null;
 class Sculpture {
  constructor(canvas, shape=0, material=0, mode='preview') {
   this.canvas=canvas;this.shape=shape;this.mode=mode;this.currentMesh=meshes[shape];this.targetMesh=this.currentMesh;
@@ -632,7 +767,10 @@ class Sculpture {
   this.materialFrom={color:[...this.color],metal:this.metal,roughness:this.roughness};this.materialStart=0;this.materialProgress=1;
   // Ripple form: 5 lobes and wave 7 reproduce the original surface exactly. Lobes stay integers.
   this.lobes=5;this.targetLobes=5;this.wave=7;this.targetWave=7;this.ripple=1;
-  this.gl=canvas.getContext('webgl',{alpha:true,antialias:true,powerPreference:'low-power'});
+  this.display=sharedRenderer?canvas.getContext('2d'):null;
+  if(sharedRenderer?.direct)canvas.style.opacity='0';
+  this.gl=sharedRenderer?sharedRenderer.gl:canvas.getContext('webgl',{alpha:true,antialias:true,powerPreference:'low-power'});
+  if(sharedRenderer)sharedRenderer.clients.add(this);
   this.available=false;this.width=0;this.height=0;
   if(!this.gl){this.unavailable();return;}
   try{this.initialize();this.available=true;}catch(error){console.error('Sculpture:',error.message);this.unavailable();return;}
@@ -656,6 +794,7 @@ class Sculpture {
   if(this.onAvailabilityChange)this.onAvailabilityChange();
  }
  initialize() {
+  if(sharedRenderer){if(!this.display)throw Error('Display canvas is unavailable.');sharedRenderer.initialize();this.program=sharedRenderer.program;this.uniforms=sharedRenderer.uniforms;this.attributes=sharedRenderer.attributes;this.index=sharedRenderer.index;this.buffers={};return;}
   const gl=this.gl;
   const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;};
   this.program=gl.createProgram();const vs=compile(gl.VERTEX_SHADER,vertexSource),fs=compile(gl.FRAGMENT_SHADER,fragmentSource);gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);
@@ -666,6 +805,7 @@ class Sculpture {
   this.upload();gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(0,0,0,0);
  }
  upload() {
+  if(sharedRenderer)return;
   const gl=this.gl;const arrays={aPosition:this.currentMesh.positions,aNormal:this.currentMesh.normals,aTarget:this.targetMesh.positions,aTargetNormal:this.targetMesh.normals};
   for(const [name,data]of Object.entries(arrays)){gl.bindBuffer(gl.ARRAY_BUFFER,this.buffers[name]);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);}
  }
@@ -711,6 +851,7 @@ class Sculpture {
  request(){if(!this.frame&&this.available&&this.visible&&!document.hidden)this.frame=requestAnimationFrame(t=>this.render(t));}
  render(time) {
   this.frame=0;if(!this.available||!this.visible||document.hidden)return;
+  if(adaptiveEnabled&&sharedRenderer.resolution.observe(this,time)){sharedRenderer.layoutDirty=true;for(const s of sharedRenderer.clients)s.request();}
   const dpr=Math.min(devicePixelRatio||1,this.mode==='preview'?1.25:1.5),w=Math.round(this.width*dpr),h=Math.round(this.height*dpr);if(!w||!h)return;
   const dt=this.last?Math.max(0,Math.min((time-this.last)/1000,.05)):.016;this.last=time;
   const auto=this.mode!=='preview'&&!this.paused&&!this.dragging&&!reducedMotion.matches;
@@ -729,25 +870,38 @@ class Sculpture {
   }
   if(this.morph<1)this.morph=reducedMotion.matches?1:easeOut((time-this.morphStart)/650);
   if(this.materialProgress<1){this.materialProgress=reducedMotion.matches?1:Math.min(1,(time-this.materialStart)/220);const t=easeOut(this.materialProgress),target=materials[this.material];this.color=this.materialFrom.color.map((c,i)=>c+(target.color[i]-c)*t);this.metal=this.materialFrom.metal+(target.metal-this.materialFrom.metal)*t;this.roughness=this.materialFrom.roughness+(target.roughness-this.materialFrom.roughness)*t;}
-  this.draw(w,h);
+  if(sharedRenderer)sharedRenderer.live=true;
+  try{this.draw(w,h);}finally{if(sharedRenderer)sharedRenderer.live=false;}
   const settling=Math.abs(this.x-this.tx)+Math.abs(this.y-this.ty)+Math.abs(this.light-this.targetLight)+Math.abs(this.tension-this.targetTension)+Math.abs(this.wave-this.targetWave)+Math.abs(1-this.ripple)+(this.lobes!==this.targetLobes?1:0)>.001;
-  if(auto||this.hovered||settling||Math.abs(this.velocity)>.005||this.morph<1||this.materialProgress<1)this.request();
+  const moving=auto||this.hovered||settling||Math.abs(this.velocity)>.005||this.morph<1||this.materialProgress<1;
+  if(adaptiveEnabled&&sharedRenderer.resolution.finish(this,moving)){sharedRenderer.layoutDirty=true;for(const s of sharedRenderer.clients)s.request();}
+  if(moving)this.request();
  }
  // Drawing is independent of simulation, so a print preserves the exact displayed state.
  draw(w,h) {
   const gl=this.gl;
+  if(sharedRenderer)sharedRenderer.bind(this,w,h);
   if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
-  gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);
+  if(sharedRenderer)gl.viewport(...sharedRenderer.viewport);else gl.viewport(0,0,w,h);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);
   for(const n of Object.keys(this.buffers)){const loc=this.attributes[n];gl.bindBuffer(gl.ARRAY_BUFFER,this.buffers[n]);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);}
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.index);const u=this.uniforms;
   // Fit the object to the shorter viewport dimension, including portrait canvases.
   const scale=(this.mode==='hero'?1.1:this.mode==='lab'?1.05:1.02)*Math.min(1,w/h);
   gl.uniform1f(u.uX,this.x);gl.uniform1f(u.uY,this.y);gl.uniform1f(u.uAspect,w/h);gl.uniform1f(u.uScale,scale);
   gl.uniform1f(u.uMorph,this.morph);gl.uniform1f(u.uTension,this.tension);gl.uniform1f(u.uLobes,this.lobes);gl.uniform1f(u.uWave,this.wave);gl.uniform1f(u.uRipple,this.ripple);gl.uniform3fv(u.uColor,this.color);gl.uniform1f(u.uMetal,this.metal);gl.uniform1f(u.uRoughness,this.roughness);gl.uniform1f(u.uLight,this.light);
+  if(shadowEnabled){gl.uniform1f(u.uPass,0);sharedRenderer.shadow.draw(this,scale);}
   gl.drawElements(gl.TRIANGLES,meshes[0].indices.length,gl.UNSIGNED_SHORT,0);
+  if(sharedRenderer)sharedRenderer.present(this,w,h);
  }
  copyTo(context,x,y,w,h) {
   if(!this.available||this.gl.isContextLost())throw Error('The live sculpture is unavailable.');
+  if(sharedRenderer?.direct){
+   const width=this.canvas.width,height=this.canvas.height;
+   try{this.draw(w,h);context.drawImage(sharedRenderer.canvas,x,y,w,h);}
+   finally{this.canvas.width=width;this.canvas.height=height;sharedRenderer.layoutDirty=true;for(const s of sharedRenderer.clients)s.request();}
+   return;
+  }
   const previousWidth=this.canvas.width,previousHeight=this.canvas.height;
   try{this.draw(w,h);context.drawImage(this.canvas,x,y,w,h);}
   finally{if(previousWidth&&previousHeight)this.draw(previousWidth,previousHeight);else{this.canvas.width=previousWidth;this.canvas.height=previousHeight;}}
