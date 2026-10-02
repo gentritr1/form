@@ -9,6 +9,7 @@ FORM-portfolio-project.zip
 # Local tool and hosting state
 .sites-runtime/
 .agents/
+.claude/
 .codex/
 .openai/
 outputs/

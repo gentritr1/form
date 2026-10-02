@@ -2,6 +2,7 @@
 'use strict';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
+const systemTheme = matchMedia('(prefers-color-scheme: dark)');
 const names = ['Trefoil', 'Orbit', 'Bloom'];
 const descriptions = ['One continuous curve. Three crossings.', 'A ring, lifted into a slow wave.', 'Eight lobes, folded from a sphere.'];
 const materials = [
@@ -9,9 +10,22 @@ const materials = [
   { name: 'Chrome', color: [.72, .79, .83], metal: 1, roughness: .14 },
   { name: 'Porcelain', color: [.84, .85, .79], metal: 0, roughness: .38 }
 ];
+// The room takes the temperature of the hero material; these mirror the CSS --bg tokens.
+const materialSlugs = ['copper', 'chrome', 'porcelain'];
+const themeBackgrounds = {
+  light: { copper: '#ECE9E4', chrome: '#E8EBEE', porcelain: '#E9ECE8' },
+  dark: { copper: '#1B1917', chrome: '#17191C', porcelain: '#171A18' }
+};
+// A JS lookup, not getComputedStyle: a computed read mid-crossfade returns an in-between colour.
+function syncThemeColor() {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : systemTheme.matches;
+  const material = document.documentElement.dataset.material || 'copper';
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', themeBackgrounds[dark ? 'dark' : 'light'][material]);
+}
 const vertexSource = `
 attribute vec3 aPosition, aNormal, aTarget, aTargetNormal;
-uniform float uX, uY, uAspect, uScale, uMorph, uTension;
+uniform float uX, uY, uAspect, uScale, uMorph, uTension, uLobes, uWave, uRipple;
 varying vec3 vNormal, vPosition, vLocal;
 vec3 rotation(vec3 p) {
  float cx=cos(uX), sx=sin(uX), cy=cos(uY), sy=sin(uY);
@@ -21,7 +35,10 @@ vec3 rotation(vec3 p) {
 vec3 deform(vec3 p){
  float a=p.y*uTension*.85;
  p.xz=mat2(cos(a),-sin(a),sin(a),cos(a))*p.xz;
- float ripple=1.+uTension*.07*sin(p.y*7.+atan(p.z,p.x)*5.);
+ // atan is singular on the vertical axis and the lobes crowd together near it, so the ripple fades out
+ // there (sooner for more lobes) before the mesh can no longer resolve it.
+ float fade=smoothstep(.03*uLobes,.03*uLobes+.35,length(p.xz));
+ float ripple=1.+uTension*.07*uRipple*fade*sin(p.y*uWave+atan(p.z,p.x)*uLobes);
  return p*ripple;
 }
 void main(){
@@ -84,6 +101,40 @@ void main(){
  gl_FragColor=vec4(pow(filmic(color),vec3(1./2.2)),1.);
 }`;
 const TAU = Math.PI * 2;
+// Cast a word: the same normalised word gives the same sculpture on every device.
+const sceneKeys = ['silver', 'sage', 'ink'];
+const normalizeWord = word => String(word ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+function mulberry32(seed) {
+ let a = seed >>> 0;
+ return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function castWord(word) {
+ const text = normalizeWord(word);
+ if (!text) return null;
+ let hash = 0x811c9dc5;
+ for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193); }
+ hash >>>= 0;
+ const r = mulberry32(hash);
+ const shape = Math.floor(r() * 3), material = Math.floor(r() * 3), scene = sceneKeys[Math.floor(r() * 3)];
+ const twist = 20 + Math.round(r() * 80), light = Math.round(r() * 180), lobes = 2 + Math.floor(r() * 8);
+ const wave = Math.round((3 + r() * 9) * 10) / 10, x = -0.6 + r() * 1.2, y = r() * TAU;
+ return { hash, shape, material, scene, twist, light, lobes, wave, x, y };
+}
+// #study=v1.<shape>.<material>.<scene>.<twist>.<light>.<lobes>.<wave×10>.<x×100>.<y×100>[&name=…]
+function parseStudy(hash) {
+ const match = /^#?study=v1\.(\d+)\.(\d+)\.(\d+)\.(\d+)\.(\d+)\.(\d+)\.(\d+)\.(-?\d+)\.(\d+)(&.*)?$/.exec(String(hash ?? ''));
+ if (!match) return null;
+ const [shape, material, scene, twist, light, lobes, wave, x, y] = match.slice(1, 10).map(Number);
+ const within = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
+ if (!within(shape, 0, 2) || !within(material, 0, 2) || !within(scene, 0, 2) || !within(twist, 0, 100) || !within(light, 0, 180) || !within(lobes, 2, 9) || !within(wave, 30, 120) || !within(x, -140, 140) || !within(y, 0, 628)) return null;
+ let name = '';
+ const param = (match[10] || '').split('&').find(part => part.startsWith('name='));
+ if (param) {
+  try { name = decodeURIComponent(param.slice(5)).trim(); } catch { name = ''; }
+  name = name.slice(0, 42); if (/[\uD800-\uDBFF]$/.test(name)) name = name.slice(0, -1);
+ }
+ return { shape, material, scene: sceneKeys[scene], twist, light, lobes, wave: wave / 10, x: x / 100, y: y / 100, name };
+}
 const NU = 192, NV = 64;
 const normalize = v => { const l = Math.hypot(...v) || 1; return v.map(n => n / l); };
 const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
@@ -137,6 +188,8 @@ class Sculpture {
   this.dragging=false;this.velocity=0;this.hovered=false;this.tension=mode==='lab'?.35:0;this.targetTension=this.tension;this.light=mode==='lab'?0:.15;this.targetLight=this.light;
   this.material=material;this.color=[...materials[material].color];this.metal=materials[material].metal;this.roughness=materials[material].roughness;
   this.materialFrom={color:[...this.color],metal:this.metal,roughness:this.roughness};this.materialStart=0;this.materialProgress=1;
+  // Ripple form: 5 lobes and wave 7 reproduce the original surface exactly. Lobes stay integers.
+  this.lobes=5;this.targetLobes=5;this.wave=7;this.targetWave=7;this.ripple=1;
   this.gl=canvas.getContext('webgl',{alpha:true,antialias:true,powerPreference:'low-power'});
   this.available=false;this.width=0;this.height=0;
   if(!this.gl){this.unavailable();return;}
@@ -157,7 +210,7 @@ class Sculpture {
   this.syncAvailability();
  }
  syncAvailability() {
-  if(this.mode==='lab')document.querySelectorAll('.experiment-controls input,.experiment-controls select,#lab-reset,#shape-handle,#surprise').forEach(c=>c.disabled=!this.available);
+  if(this.mode==='lab')document.querySelectorAll('.experiment-controls input,#lab-reset,#shape-handle,#surprise').forEach(c=>c.disabled=!this.available);
   if(this.onAvailabilityChange)this.onAvailabilityChange();
  }
  initialize() {
@@ -165,7 +218,7 @@ class Sculpture {
   const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;};
   this.program=gl.createProgram();const vs=compile(gl.VERTEX_SHADER,vertexSource),fs=compile(gl.FRAGMENT_SHADER,fragmentSource);gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);
   if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.program));
-  this.uniforms={};for(const n of ['uX','uY','uAspect','uScale','uMorph','uTension','uColor','uMetal','uRoughness','uLight'])this.uniforms[n]=gl.getUniformLocation(this.program,n);
+  this.uniforms={};for(const n of ['uX','uY','uAspect','uScale','uMorph','uTension','uLobes','uWave','uRipple','uColor','uMetal','uRoughness','uLight'])this.uniforms[n]=gl.getUniformLocation(this.program,n);
   this.attributes={};this.buffers={};for(const n of ['aPosition','aNormal','aTarget','aTargetNormal']){this.attributes[n]=gl.getAttribLocation(this.program,n);this.buffers[n]=gl.createBuffer();}
   this.index=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.index);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,meshes[0].indices,gl.STATIC_DRAW);
   this.upload();gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(0,0,0,0);
@@ -190,6 +243,12 @@ class Sculpture {
   if(immediate||reducedMotion.matches)this.tension=this.targetTension;
   this.request();
  }
+ // A fractional lobe count shows a seam where atan wraps, so lobes never interpolate (see render).
+ setForm(lobes, wave, immediate=false) {
+  this.targetLobes=Math.max(2,Math.min(9,Math.round(lobes)));this.targetWave=Math.max(3,Math.min(12,wave));
+  if(immediate||reducedMotion.matches){this.lobes=this.targetLobes;this.wave=this.targetWave;this.ripple=1;}
+  this.request();
+ }
  bindInteraction() {
   let px=0,py=0,last=0;
   this.canvas.addEventListener('pointerdown',e=>{if(e.button!==0)return;this.dragging=true;this.velocity=0;px=e.clientX;py=e.clientY;last=performance.now();this.canvas.setPointerCapture(e.pointerId);});
@@ -211,7 +270,7 @@ class Sculpture {
  render(time) {
   this.frame=0;if(!this.available||!this.visible||document.hidden)return;
   const dpr=Math.min(devicePixelRatio||1,this.mode==='preview'?1.25:1.5),w=Math.round(this.width*dpr),h=Math.round(this.height*dpr);if(!w||!h)return;
-  const dt=this.last?Math.min((time-this.last)/1000,.05):.016;this.last=time;
+  const dt=this.last?Math.max(0,Math.min((time-this.last)/1000,.05)):.016;this.last=time;
   const auto=this.mode!=='preview'&&!this.paused&&!this.dragging&&!reducedMotion.matches;
   if(auto)this.ty+=dt*.105;
   if(this.hovered)this.ty+=dt*.3;
@@ -219,10 +278,17 @@ class Sculpture {
   const smooth=reducedMotion.matches?1:1-Math.exp(-15*dt);
   this.x+=(this.tx-this.x)*smooth;this.y+=(this.ty-this.y)*smooth;this.light+=(this.targetLight-this.light)*smooth;
   this.tension+=(this.targetTension-this.tension)*smooth;
+  // Ripple gate: flatten the ripple, swap the integer lobe count while it is flat, then raise it again.
+  if(reducedMotion.matches){this.lobes=this.targetLobes;this.wave=this.targetWave;this.ripple=1;}
+  else{
+   this.wave+=(this.targetWave-this.wave)*smooth;if(Math.abs(this.targetWave-this.wave)<.001)this.wave=this.targetWave;
+   if(this.lobes!==this.targetLobes){if(this.ripple<.02)this.lobes=this.targetLobes;else this.ripple-=this.ripple*smooth;}
+   else{this.ripple+=(1-this.ripple)*smooth;if(1-this.ripple<.001)this.ripple=1;}
+  }
   if(this.morph<1)this.morph=reducedMotion.matches?1:easeOut((time-this.morphStart)/650);
   if(this.materialProgress<1){this.materialProgress=reducedMotion.matches?1:Math.min(1,(time-this.materialStart)/220);const t=easeOut(this.materialProgress),target=materials[this.material];this.color=this.materialFrom.color.map((c,i)=>c+(target.color[i]-c)*t);this.metal=this.materialFrom.metal+(target.metal-this.materialFrom.metal)*t;this.roughness=this.materialFrom.roughness+(target.roughness-this.materialFrom.roughness)*t;}
   this.draw(w,h);
-  const settling=Math.abs(this.x-this.tx)+Math.abs(this.y-this.ty)+Math.abs(this.light-this.targetLight)+Math.abs(this.tension-this.targetTension)>.001;
+  const settling=Math.abs(this.x-this.tx)+Math.abs(this.y-this.ty)+Math.abs(this.light-this.targetLight)+Math.abs(this.tension-this.targetTension)+Math.abs(this.wave-this.targetWave)+Math.abs(1-this.ripple)+(this.lobes!==this.targetLobes?1:0)>.001;
   if(auto||this.hovered||settling||Math.abs(this.velocity)>.005||this.morph<1||this.materialProgress<1)this.request();
  }
  // Drawing is independent of simulation, so a print preserves the exact displayed state.
@@ -235,7 +301,7 @@ class Sculpture {
   // Fit the object to the shorter viewport dimension, including portrait canvases.
   const scale=(this.mode==='hero'?1.1:this.mode==='lab'?1.05:1.02)*Math.min(1,w/h);
   gl.uniform1f(u.uX,this.x);gl.uniform1f(u.uY,this.y);gl.uniform1f(u.uAspect,w/h);gl.uniform1f(u.uScale,scale);
-  gl.uniform1f(u.uMorph,this.morph);gl.uniform1f(u.uTension,this.tension);gl.uniform3fv(u.uColor,this.color);gl.uniform1f(u.uMetal,this.metal);gl.uniform1f(u.uRoughness,this.roughness);gl.uniform1f(u.uLight,this.light);
+  gl.uniform1f(u.uMorph,this.morph);gl.uniform1f(u.uTension,this.tension);gl.uniform1f(u.uLobes,this.lobes);gl.uniform1f(u.uWave,this.wave);gl.uniform1f(u.uRipple,this.ripple);gl.uniform3fv(u.uColor,this.color);gl.uniform1f(u.uMetal,this.metal);gl.uniform1f(u.uRoughness,this.roughness);gl.uniform1f(u.uLight,this.light);
   gl.drawElements(gl.TRIANGLES,meshes[0].indices.length,gl.UNSIGNED_SHORT,0);
  }
  copyTo(context,x,y,w,h) {
@@ -252,25 +318,39 @@ const previews=[...document.querySelectorAll('.preview')].map(c=>new Sculpture(c
 const allSculptures=[hero,lab,...previews];
 const announce=text=>document.querySelector('#announcement').textContent=text;
 function selectMaterial(i) {
- hero.setMaterial(i);document.querySelectorAll('.swatch').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.material)===i)));
+ hero.setMaterial(i);document.documentElement.dataset.material=materialSlugs[i];
+ document.querySelectorAll('.swatch').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.material)===i)));
  document.querySelector('#material-name').textContent=materials[i].name;
  hero.canvas.setAttribute('aria-label',`Interactive ${materials[i].name.toLowerCase()} ${names[hero.shape]} sculpture. Drag to rotate, or use the arrow keys.`);announce(`${materials[i].name} selected.`);
+ syncThemeColor();
 }
 function selectObject(shape, fromGallery=false) {
  hero.select(shape);document.querySelector('#stage .fallback strong').textContent=names[shape];document.querySelector('#object-name').textContent=names[shape];document.querySelector('#object-desc').textContent=descriptions[shape];
- document.querySelectorAll('[data-object]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.object)===shape)));selectMaterial(shape);
+ document.querySelectorAll('[data-object]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.object)===shape)));selectMaterial(shape);positionTabIndicator();
  if(fromGallery){document.querySelector('.hero').scrollIntoView({behavior:reducedMotion.matches?'instant':'smooth'});(hero.available?hero.canvas:document.querySelector(`[data-object="${shape}"]`)).focus({preventScroll:true});}
  announce(`${names[shape]} selected. Drag or use arrow keys to rotate.`);
 }
 document.querySelectorAll('.swatch').forEach(b=>b.addEventListener('click',()=>selectMaterial(Number(b.dataset.material))));
 document.querySelectorAll('[data-object]').forEach(b=>b.addEventListener('click',()=>selectObject(Number(b.dataset.object))));
 document.querySelectorAll('.work').forEach(b=>b.addEventListener('click',()=>selectObject(Number(b.dataset.shape),true)));
+// One sliding indicator under the active object tab, measured from live layout.
+const objectSelector=document.querySelector('.object-selector'),tabIndicator=objectSelector.querySelector('.tab-indicator');
+function positionTabIndicator(){
+ const active=objectSelector.querySelector('[data-object][aria-pressed=true]');
+ if(!active||!tabIndicator)return;
+ const width=active.offsetWidth||0;
+ tabIndicator.style.transform=`translateX(${active.offsetLeft||0}px) scaleX(${width})`;
+}
+positionTabIndicator();
+// Enable the transition only after the first placement so the indicator does not slide in on load.
+requestAnimationFrame(()=>{if(tabIndicator)tabIndicator.dataset.ready='true';});
+if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>positionTabIndicator()).observe(objectSelector);
 const pause=document.querySelector('#pause');
-const labPause=document.querySelector('#lab-pause');
+const labPause=document.querySelector('#lab-pause'),labPauseLabel=document.querySelector('#lab-pause-label');
 let savingPrint=false;
 function updatePause(){
  pause.disabled=reducedMotion.matches||!hero.available;pause.setAttribute('aria-pressed',String(hero.paused||reducedMotion.matches));pause.setAttribute('aria-label',reducedMotion.matches?'Automatic rotation disabled by reduced motion preference':hero.paused?'Resume sculpture rotation':'Pause sculpture rotation');
- labPause.disabled=reducedMotion.matches||!lab.available;labPause.textContent=reducedMotion.matches?'Motion off':lab.paused?'Resume motion':'Pause motion';labPause.setAttribute('aria-pressed',String(lab.paused||reducedMotion.matches));
+ labPause.disabled=reducedMotion.matches||!lab.available;labPauseLabel.textContent=reducedMotion.matches?'Motion off':lab.paused?'Resume motion':'Pause motion';labPause.setAttribute('aria-pressed',String(lab.paused||reducedMotion.matches));
  document.querySelector('#reset').disabled=!hero.available;
  document.querySelector('#save-print').disabled=!lab.available||savingPrint;
 }
@@ -280,6 +360,9 @@ document.querySelector('#reset').addEventListener('click',()=>{hero.reset();anno
 const tension=document.querySelector('#tension'),light=document.querySelector('#light');
 const handle=document.querySelector('#shape-handle'),labShape=document.querySelector('#lab-shape'),labMaterial=document.querySelector('#lab-material'),studyTitle=document.querySelector('#study-title');
 const labStage=document.querySelector('#lab-stage'),printStatus=document.querySelector('#print-status');
+// Segmented radio groups replace the old <select>s; value === data-index === thumb position.
+function segValue(group){const checked=group.querySelector('input:checked');return checked?Number(checked.value):0;}
+function setSeg(group,index){group.querySelectorAll('input').forEach(inp=>{inp.checked=Number(inp.value)===index;});group.dataset.index=String(index);}
 const scenes={silver:{bg:'#d9e0e5',text:'#272a2d'},sage:{bg:'#cdd9d2',text:'#272a2d'},ink:{bg:'#202b35',text:'#f0f3f5'}};
 const studies=[
  {title:'A softer orbit',shape:1,material:2,twist:12,light:25,scene:'sage',x:-.3,y:.7},
@@ -288,36 +371,65 @@ const studies=[
  {title:'Porcelain loop',shape:0,material:2,twist:8,light:35,scene:'silver',x:-.1,y:1.4},
  {title:'After dark',shape:1,material:1,twist:80,light:165,scene:'ink',x:.45,y:.4}
 ];
-let scene=scenes.silver,studyName='Bloom study',lastStudy=-1;
+let scene=scenes.silver,sceneKey='silver',studyName='Bloom study',lastStudy=-1;
+const castReadout=document.querySelector('#cast-readout');
+const restingStatus='Your print is a PNG. Nothing you type leaves this page.';
+// The active cast (null when no word is cast), the normalised word it came from, and whether controls changed it since.
+let cast=null,castKey='',castAdjusted=false,castTimer=0;
+function setStatus(text){printStatus.textContent=text;delete printStatus.dataset.error;}
+function castStatus(){return cast?`Cast from “${studyTitle.value.trim()}”. Adjust it, print it, or copy its link.`:restingStatus;}
+function updateReadout(){
+ castReadout.textContent=cast?`Nº ${cast.hash.toString(16).padStart(8,'0')} — ${names[cast.shape]} / ${materials[cast.material].name} / ${cast.lobes} lobes${castAdjusted?' / adjusted':''}`:'Nº — — type to cast';
+}
 function updateStudyView(){
- labShape.value=String(lab.shape);labMaterial.value=String(lab.material);
+ setSeg(labShape,lab.shape);setSeg(labMaterial,lab.material);
  document.querySelector('#study-name').textContent=studyTitle.value.trim()||studyName;
  document.querySelector('#lab-meta').textContent=`${names[lab.shape]} / ${materials[lab.material].name}`;
  document.querySelector('#lab-fallback-name').textContent=names[lab.shape];
  lab.canvas.setAttribute('aria-label',`Interactive ${materials[lab.material].name.toLowerCase()} ${names[lab.shape]}. Drag or use arrow keys to rotate.`);
 }
-function markPersonal(){studyName=`${names[lab.shape]} study`;updateStudyView();printStatus.textContent='Your print is a PNG. No sign-up needed.';delete printStatus.dataset.error;}
-function setScene(key){scene=scenes[key];labStage.style.setProperty('--scene-bg',scene.bg);labStage.style.setProperty('--scene-text',scene.text);}
+function markPersonal(){studyName=`${names[lab.shape]} study`;if(cast)castAdjusted=true;updateStudyView();updateReadout();setStatus(castStatus());}
+function setScene(key){sceneKey=key;scene=scenes[key];labStage.style.setProperty('--scene-bg',scene.bg);labStage.style.setProperty('--scene-text',scene.text);}
 function setTwist(value,immediate=true){
- const amount=Math.max(0,Math.min(100,Math.round(value)));tension.value=String(amount);lab.setTension(amount/100,immediate);
+ const amount=Math.max(0,Math.min(100,Math.round(value)));tension.value=String(amount);tension.style.setProperty('--fill',amount+'%');lab.setTension(amount/100,immediate);
  document.querySelector('#tension-value').textContent=amount+'%';tension.setAttribute('aria-valuetext',amount+' percent');
  handle.setAttribute('aria-valuenow',String(amount));handle.setAttribute('aria-valuetext',amount+' percent');handle.style.setProperty('--twist-ratio',String((100-amount)/100));
 }
-function setLight(value){light.value=String(value);lab.targetLight=(value-45)*Math.PI/180;lab.request();document.querySelector('#light-value').textContent=value+'°';light.setAttribute('aria-valuetext',value+' degrees');}
+function setLight(value){light.value=String(value);light.style.setProperty('--fill',(value/180*100)+'%');lab.targetLight=(value-45)*Math.PI/180;lab.request();document.querySelector('#light-value').textContent=value+'°';light.setAttribute('aria-valuetext',value+' degrees');}
 tension.addEventListener('input',()=>{setTwist(Number(tension.value));markPersonal();});
 light.addEventListener('input',()=>{setLight(Number(light.value));markPersonal();});
-labShape.addEventListener('change',()=>{lab.select(Number(labShape.value));markPersonal();announce(`${names[lab.shape]} in your studio.`);});
-labMaterial.addEventListener('change',()=>{lab.setMaterial(Number(labMaterial.value));markPersonal();announce(`${materials[lab.material].name} selected in your studio.`);});
-studyTitle.addEventListener('input',updateStudyView);
-document.querySelector('#surprise').addEventListener('click',()=>{
+labShape.addEventListener('change',()=>{const v=segValue(labShape);labShape.dataset.index=String(v);lab.select(v);markPersonal();announce(`${names[lab.shape]} in your studio.`);});
+labMaterial.addEventListener('change',()=>{const v=segValue(labMaterial);labMaterial.dataset.index=String(v);lab.setMaterial(v);markPersonal();announce(`${materials[lab.material].name} selected in your studio.`);});
+// Casting: the word chooses every control, then the visitor refines it.
+function applyCast(c,word){
+ lab.select(c.shape);lab.setMaterial(c.material);setTwist(c.twist,false);setLight(c.light);setScene(c.scene);lab.setForm(c.lobes,c.wave);
+ // The cast angle, reached by the shortest turn from the current pose (equal modulo one revolution).
+ lab.tx=c.x;lab.ty=lab.y+((((c.y-lab.y)%TAU)+TAU*1.5)%TAU-TAU/2);lab.velocity=0;
+ cast=c;castKey=normalizeWord(word);castAdjusted=false;studyName=`${names[c.shape]} study`;
+ updateStudyView();updateReadout();announce(`Cast: ${names[c.shape]}, ${materials[c.material].name}.`);setStatus(castStatus());
+}
+function castFromInput(force=false){
+ clearTimeout(castTimer);castTimer=0;
+ const word=studyTitle.value.trim(),c=castWord(word);
+ if(!c){if(cast){cast=null;castKey='';castAdjusted=false;setStatus(restingStatus);}updateStudyView();updateReadout();return;}
+ // Retyping the same word (or trailing spaces) keeps the visitor's refinements; Enter recasts on purpose.
+ if(!force&&cast&&normalizeWord(word)===castKey)return;
+ applyCast(c,word);
+}
+studyTitle.addEventListener('input',()=>{updateStudyView();clearTimeout(castTimer);castTimer=setTimeout(()=>castFromInput(),220);});
+studyTitle.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing)castFromInput(true);});
+const surpriseBtn=document.querySelector('#surprise'),surpriseIcon=surpriseBtn.querySelector('.btn-cell svg');let surpriseSpin=0;
+surpriseBtn.addEventListener('click',()=>{
+ surpriseSpin+=180;if(surpriseIcon)surpriseIcon.style.rotate=surpriseSpin+'deg';
  const options=studies.map((_,i)=>i).filter(i=>i!==lastStudy);lastStudy=options[Math.floor(Math.random()*options.length)];const next=studies[lastStudy];
- lab.select(next.shape);lab.setMaterial(next.material);setTwist(next.twist,false);setLight(next.light);setScene(next.scene);lab.tx=next.x;lab.ty=next.y;lab.velocity=0;
- studyName=next.title;updateStudyView();announce(`${next.title}. ${names[next.shape]}, ${materials[next.material].name}.`);
+ lab.select(next.shape);lab.setMaterial(next.material);setTwist(next.twist,false);setLight(next.light);setScene(next.scene);lab.tx=next.x;lab.ty=next.y;lab.velocity=0;lab.setForm(5,7);
+ studyName=next.title;if(cast)castAdjusted=true;updateStudyView();updateReadout();announce(`${next.title}. ${names[next.shape]}, ${materials[next.material].name}.`);
  printStatus.textContent='Like this angle? Name it and save a print.';delete printStatus.dataset.error;
 });
 document.querySelector('#lab-reset').addEventListener('click',()=>{
- lab.select(2);lab.setMaterial(1);setTwist(35,false);setLight(45);setScene('silver');lab.reset();studyTitle.value='';studyName='Bloom study';lastStudy=-1;updateStudyView();
- printStatus.textContent='Your print is a PNG. No sign-up needed.';delete printStatus.dataset.error;announce('Original form and lighting restored.');
+ lab.select(2);lab.setMaterial(1);setTwist(35,false);setLight(45);setScene('silver');lab.setForm(5,7);lab.reset();
+ clearTimeout(castTimer);castTimer=0;studyTitle.value='';cast=null;castKey='';castAdjusted=false;studyName='Bloom study';lastStudy=-1;updateStudyView();updateReadout();
+ setStatus(restingStatus);announce('Original form and lighting restored.');
 });
 // A dedicated handle keeps sculpting separate from page scrolling and object rotation.
 let handlePointer=null,startY=0,startTwist=35,railHeight=160;
@@ -340,7 +452,7 @@ handle.addEventListener('keydown',e=>{
  if(e.key==='Home')next=0;else if(e.key==='End')next=100;else{const delta={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10}[e.key];if(delta===undefined)return;next=current+delta;}
  e.preventDefault();setTwist(next);markPersonal();
 });
-setTwist(35);updateStudyView();
+setTwist(35);setLight(45);updateStudyView();
 
 function composePoster(sculpture,title){
  const poster=document.createElement('canvas');poster.width=1200;poster.height=1500;const context=poster.getContext('2d');if(!context)throw Error('The print canvas is unavailable.');
@@ -361,7 +473,7 @@ const savePrint=document.querySelector('#save-print');
 savePrint.addEventListener('click',()=>{
  if(savingPrint||!lab.available)return;savingPrint=true;updatePause();savePrint.setAttribute('aria-busy','true');document.querySelector('#save-label').textContent='Preparing print…';printStatus.textContent='Preparing your sculpture print.';delete printStatus.dataset.error;
  const title=studyTitle.value.trim()||studyName;
- const finish=error=>{savingPrint=false;savePrint.setAttribute('aria-busy','false');document.querySelector('#save-label').textContent='Save print';updatePause();if(error){printStatus.dataset.error='true';printStatus.textContent='The print could not be saved. Try again in a WebGL-enabled browser.';}else printStatus.textContent='Your print is ready. Check your downloads.';};
+ const finish=error=>{savingPrint=false;savePrint.setAttribute('aria-busy','false');document.querySelector('#save-label').textContent='Save print';updatePause();if(error){printStatus.dataset.error='true';printStatus.textContent='The print could not be saved. Try again in a WebGL-enabled browser.';}else{printStatus.textContent='Your print is ready. Check your downloads.';savePrint.dataset.state='done';setTimeout(()=>{delete savePrint.dataset.state;},1600);}};
  try{
   const poster=composePoster(lab,title);
   poster.toBlob(blob=>{
@@ -373,11 +485,46 @@ savePrint.addEventListener('click',()=>{
   },'image/png');
  }catch{finish(true);}
 });
-const theme=document.querySelector('#theme'),systemTheme=matchMedia('(prefers-color-scheme: dark)');
-function updateTheme(){const dark=document.documentElement.dataset.theme?document.documentElement.dataset.theme==='dark':systemTheme.matches;theme.setAttribute('aria-label',`Switch to ${dark?'light':'dark'} theme`);document.querySelector('meta[name="theme-color"]').setAttribute('content',dark?'#1f2327':'#e9ebed');}
+// Share link: the displayed pose, the slider values and the target form, plus the typed title.
+function studyHash(){
+ const y=((lab.y%TAU)+TAU)%TAU,title=studyTitle.value.trim();
+ const hash=`#study=v1.${lab.shape}.${lab.material}.${sceneKeys.indexOf(sceneKey)}.${Number(tension.value)}.${Number(light.value)}.${lab.targetLobes}.${Math.round(lab.targetWave*10)}.${Math.round(lab.x*100)}.${Math.round(y*100)}`;
+ return title?`${hash}&name=${encodeURIComponent(title)}`:hash;
+}
+const copyLink=document.querySelector('#copy-link');let copyTimer=0;
+copyLink.addEventListener('click',async()=>{
+ try{history.replaceState(null,'',studyHash());}catch{}
+ let copied=false;
+ try{if(navigator.clipboard&&typeof navigator.clipboard.writeText==='function'){await navigator.clipboard.writeText(location.href);copied=true;}}catch{copied=false;}
+ clearTimeout(copyTimer);
+ if(copied){setStatus('Link copied. Anyone who opens it sees this sculpture.');copyLink.dataset.state='done';copyTimer=setTimeout(()=>{delete copyLink.dataset.state;},1600);}
+ else{delete copyLink.dataset.state;setStatus('The address bar now holds this sculpture\'s link. Copy it from there.');}
+});
+// Opening a link restores its exact parameters immediately; the name is not recast.
+function applyStudy(study){
+ clearTimeout(castTimer);castTimer=0;
+ lab.select(study.shape);lab.morph=1;
+ lab.setMaterial(study.material);const m=materials[study.material];lab.color=[...m.color];lab.metal=m.metal;lab.roughness=m.roughness;lab.materialProgress=1;
+ setTwist(study.twist,true);setLight(study.light);lab.light=lab.targetLight;
+ labStage.style.transition='none';setScene(study.scene);void labStage.offsetWidth;labStage.style.transition='';
+ lab.setForm(study.lobes,study.wave,true);
+ lab.tx=lab.x=study.x;lab.ty=lab.y=study.y;lab.velocity=0;
+ studyTitle.value=study.name;studyName=`${names[study.shape]} study`;
+ // The readout still names the word's own cast; "adjusted" when the link's form differs from it.
+ cast=castWord(study.name);castKey=cast?normalizeWord(study.name):'';
+ castAdjusted=!!cast&&['shape','material','scene','twist','light','lobes','wave'].some(k=>cast[k]!==study[k]);
+ updateStudyView();updateReadout();lab.request();
+ setStatus(study.name?`You opened “${study.name}”. Make it yours, or cast your own word.`:'You opened a shared sculpture. Make it yours, or cast your own word.');
+ document.querySelector('#experiment').scrollIntoView({behavior:'instant',block:'start'});
+}
+function openStudyFromHash(){const study=parseStudy(location.hash);if(study)applyStudy(study);}
+window.addEventListener('hashchange',openStudyFromHash);
+const theme=document.querySelector('#theme');
+function updateTheme(){const dark=document.documentElement.dataset.theme?document.documentElement.dataset.theme==='dark':systemTheme.matches;theme.setAttribute('aria-label',`Switch to ${dark?'light':'dark'} theme`);theme.dataset.dark=String(dark);syncThemeColor();}
 theme.addEventListener('click',()=>{const dark=document.documentElement.dataset.theme?document.documentElement.dataset.theme==='dark':systemTheme.matches;document.documentElement.dataset.theme=dark?'light':'dark';try{localStorage.setItem('form-theme',document.documentElement.dataset.theme);}catch{}updateTheme();});
 systemTheme.addEventListener('change',updateTheme);updateTheme();
 // System motion preference suspends movement without erasing the visitor's pause choice.
 reducedMotion.addEventListener('change',()=>{for(const s of allSculptures){s.velocity=0;s.hovered=false;s.request();}updatePause();});
 finePointer.addEventListener('change',()=>{if(!finePointer.matches)for(const s of previews){s.hovered=false;s.request();}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseHandle();for(const s of allSculptures){if(document.hidden){cancelAnimationFrame(s.frame);s.frame=0;}else{s.last=0;s.request();}}});
+openStudyFromHash();

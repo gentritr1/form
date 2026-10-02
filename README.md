@@ -32,9 +32,13 @@ Regenerates the self-contained `FORM.html` from the editable source.
 - Asymmetric gallery with object-specific construction notes and clear viewer actions.
 - A tactile studio: pull a dedicated handle to twist the surface; sliders and keyboard controls offer equivalent access.
 - Five curated sculpture studies, with no immediate repeat when using Surprise me.
+- Cast a word: a typed word deterministically casts a sculpture (same word, same sculpture on every device), refinable with every control.
+- A Copy link action that encodes the exact study in the URL; opening the link restores it.
 - Object and material choices, personal titles, and a 1200 × 1500 PNG poster download.
 - Original generated artwork, identified separately from the live sculptures.
 - A restrained hero entrance, consistent sans-serif typography, and a responsive exhibition layout.
+- A material-reactive identity: the page tint and accent follow the hero material (copper, chrome, porcelain) and crossfade on change, in both light and dark themes.
+- A placard button component, segmented object/material controls (native radios), accent-filled sliders, and an icon theme toggle.
 - Remembered theme choice, visible focus, reduced motion, context recovery, and offscreen/background suspension.
 
 ## Edit
