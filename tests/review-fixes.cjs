@@ -33,6 +33,18 @@ for(const s of all){s.paused=true;s.hovered=false;}tick(240);assert.equal(frames
 console.log('Passed: studio morph while typing, hero construction, eased room lighting from token tables, no style reads in draw, idle.');
 `,{require,__dirname,console});
 
+// Default: no `layers` parameter turns the whole depth pass on; `layers=none` is the baseline;
+// a depth pass that cannot start reloads once on the baseline, but never overrides an explicit choice.
+const flags="[shadowEnabled,roomEnabled,constructionEnabled,castEnabled,adaptiveEnabled,!!sharedRenderer&&sharedRenderer.direct]";
+const withSearch=(search,extra='')=>{let out;const f=original.replace(marker,`location.search=${JSON.stringify(search)};context.innerWidth=1800;context.innerHeight=875;ctx2d.clearRect=()=>{};gl.FRAMEBUFFER_COMPLETE=100;gl.checkFramebufferStatus=()=>100;const replaced=[];location.replace=url=>replaced.push(url);context.URL=Object.assign(function(href){const u=new URL(href);return u;},context.URL);${extra}${marker}`);
+ vm.runInNewContext(f.slice(0,f.indexOf('tick(4); assert'))+`report({flags:vm.runInContext(${JSON.stringify(flags)},context),available:context.instances.hero.available,replaced});`,{require,__dirname,console:{log(){},error(){}},URL,report:v=>{out=v;}});return out;};
+let r=withSearch('');assert.deepEqual(r.flags,[true,true,true,true,true,true],'No layers parameter enables the complete depth pass');assert(r.available);assert.equal(r.replaced.length,0);
+r=withSearch('?layers=none');assert.deepEqual(r.flags,[false,false,false,false,false,false],'layers=none is the baseline');
+r=withSearch('?layers=shadow,room');assert.deepEqual(r.flags,[true,true,false,false,false,true],'A subset stays independently selectable');
+r=withSearch('','gl.checkFramebufferStatus=()=>0;');assert.equal(r.available,false);assert.equal(r.replaced.length,1,'A failed default depth pass reloads once');assert(/[?&]layers=none/.test(r.replaced[0]),'…on the baseline renderer');
+r=withSearch('?layers=shadow','gl.checkFramebufferStatus=()=>0;');assert.equal(r.replaced.length,0,'An explicit layers choice is never overridden');
+console.log('Passed: depth pass on by default, layers=none baseline, subsets, single fallback reload on failure.');
+
 // Shadow composite: the edge fade must stay in the shader for both GLSL versions.
 const app=fs.readFileSync(path.join(__dirname,'../dist/app.js'),'utf8');
 assert(/smoothstep\(0\.,\.12,uv\)\*smoothstep\(0\.,\.12,1\.-uv\)/.test(app),'Shadow composite fades toward the canvas edges');

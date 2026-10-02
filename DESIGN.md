@@ -77,7 +77,7 @@ Static checks cover unique IDs, valid anchors/assets, labeled controls, slider s
 
 ## Depth pass: motion and rendering decisions
 
-The depth layers remain reviewable independently with `?layers=direct,shadow,room,construction,cast,adaptive`; `?layers=none` retains the baseline. Responsive checks pass. Frame delivery was measured in an ordinary Chrome window on an M1 Pro at 120Hz: every frame delivered in both configurations (see AUDIT.md). The layers stay opt-in until the owner has accepted how they look and feel and another device has been measured.
+The depth pass is the default (no `layers` parameter). Each layer remains reviewable independently, for example `?layers=shadow,room`; `?layers=none` is the baseline renderer. A default depth pass that fails to initialise reloads the page once with `layers=none`; an explicit `layers` choice is never overridden. Responsive checks pass. Frame delivery was measured in an ordinary Chrome window on an M1 Pro at 120Hz: every frame delivered in both configurations (see AUDIT.md). The owner made the depth pass the default on 2026-10-02 after that measurement; no second device has been measured.
 
 | Motion | Meaning | Timing / interruption |
 | --- | --- | --- |

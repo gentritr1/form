@@ -2,7 +2,8 @@
 (()=>{
  'use strict';
  const M=globalThis.FormPerfMetrics,params=new URLSearchParams(location.search);
- const layers=(params.get('layers')||'').split(',').filter(x=>x&&x!=='none');
+ // No `layers` parameter means the application default, which is the complete depth pass.
+ const layers=(params.has('layers')?params.get('layers'):'direct,shadow,room,construction,cast,adaptive').split(',').filter(x=>x&&x!=='none');
  // quick=1 measures only the baseline and the complete depth pass (about 80 seconds instead of five minutes).
  const quick=params.get('quick')==='1',allLayers='direct,shadow,room,construction,cast,adaptive';
  const batchLayers=quick?['none',allLayers]:['none','direct','shadow','room','construction','cast','adaptive',allLayers];

@@ -307,3 +307,12 @@ An earlier batch the same afternoon agrees: baseline, three runs, 238–241 fram
 Reading: both configurations deliver every frame at 120Hz in all five segments, including twist and material change. The p95 of 9.3ms against an 8.3ms interval is within vsync timing jitter, not a missed frame. The depth layers add about 1.3ms of GPU time and up to 1.3ms of CPU time per draw, inside the 8.3ms budget. The stalls in the `0ffb4a9` batch were that session's automation, not the renderer. The single 25ms interval is the first studio draw after the page scrolls to it, once per page load, in both configurations.
 
 Limits: one machine and one browser; synthetic pointer events, so input latency is not measured; no phone, Safari or Firefox measurement; feel and appearance are still the owner's call.
+
+## Depth pass made the default (2026-10-02)
+
+Owner's decision after the measurement above. With no `layers` parameter all six layers are on; `?layers=none` is the baseline; subsets still work.
+
+Checked by execution: with no parameter, six views available, WebGL2, no console or GL errors; with `?layers=none`, the eight fixed-pose framebuffer hashes still equal `3781ea5`; a shared study link opens to the same shape, material, twist, lobes and name with the depth pass on; calling the fallback in a real browser reloaded to `…&layers=none#study=…` with the link intact and the study restored on the baseline renderer. Mock tests cover the default, the baseline, a subset, one reload on a failed start, and no reload when `layers` was given explicitly.
+
+Not checked: a device where the depth pass actually fails to start (the fallback was triggered by hand), phones, Safari and Firefox.
+

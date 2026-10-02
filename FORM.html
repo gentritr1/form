@@ -456,8 +456,18 @@ h1 { font-size: clamp(60px, 6.7vw, 96px); line-height: 1.04; letter-spacing: -.0
 'use strict';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
-// Empty layers is the frozen baseline. Each depth package remains independently comparable.
-const depthLayers=new Set(((typeof location.search==='string'?location.search:'').match(/[?&]layers=([^&]*)/)?.[1]||'').split(','));
+// The depth pass is the default. `?layers=none` is the frozen baseline, and any subset
+// (`?layers=shadow,room`) keeps each package independently comparable.
+const allDepthLayers='direct,shadow,room,construction,cast,adaptive';
+const layersParam=typeof location.search==='string'?location.search.match(/[?&]layers=([^&]*)/)?.[1]:'none';
+const depthLayers=new Set((layersParam===undefined?allDepthLayers:layersParam).split(','));
+// If the default depth pass cannot start on this device, reload once on the baseline renderer
+// rather than leaving the visitor with no sculpture. An explicit `layers` choice is never overridden.
+let baselineFallbackStarted=false;
+function fallBackToBaseline(){
+ if(layersParam!==undefined||baselineFallbackStarted)return;baselineFallbackStarted=true;
+ try{const url=new URL(location.href);url.searchParams.set('layers','none');location.replace(url.href);}catch{}
+}
 const shadowEnabled=depthLayers.has('shadow');
 const adaptiveEnabled=depthLayers.has('adaptive');
 const roomEnabled=depthLayers.has('room');
@@ -1026,7 +1036,7 @@ class Sculpture {
   if(sharedRenderer)sharedRenderer.clients.add(this);
   this.available=false;this.width=0;this.height=0;
   if(!this.gl){this.unavailable();return;}
-  try{this.initialize();this.available=true;}catch(error){console.error('Sculpture:',error.message);this.unavailable();return;}
+  try{this.initialize();this.available=true;}catch(error){console.error('Sculpture:',error.message);this.unavailable();if(sharedRenderer)fallBackToBaseline();return;}
   this.resize=new ResizeObserver(entries=>{const r=entries[0].contentRect;this.width=r.width;this.height=r.height;this.request();});this.resize.observe(canvas);
   this.observer=new IntersectionObserver(([e])=>{this.visible=e.isIntersecting;if(!this.visible){cancelAnimationFrame(this.frame);this.frame=0;this.last=0;if(adaptiveEnabled)sharedRenderer.resolution.finish(this,false);}else this.request();},{rootMargin:'30px'});this.observer.observe(canvas);
   canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();cancelAnimationFrame(this.frame);this.frame=0;this.last=0;this.velocity=0;this.dragging=false;this.unavailable();});
