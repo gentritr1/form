@@ -14,6 +14,14 @@ const accepted = new Map();
 for(const r of perf.sort((a,b)=>a.date.localeCompare(b.date))) {
   if(r.sourceHash===sourceHash && r.valid && r.runs?.length===3) accepted.set(key(r),r);
 }
+// Nothing to report: say why instead of writing an empty table.
+if(!accepted.size){
+  const stale=perf.filter(r=>r.sourceHash!==sourceHash).length,invalid=perf.filter(r=>r.sourceHash===sourceHash&&!(r.valid&&r.runs?.length===3)).length;
+  console.log(`No measurements for the current build yet (${perf.length} saved run records: ${stale} from an older build, ${invalid} incomplete or invalid).`);
+  console.log('Start the server with `npm run dev`, open http://127.0.0.1:4173/tests/perf.html?layers=none&batch=1 in a normal browser window,');
+  console.log('keep that tab in front until its status line says the eighth configuration is saved (about five minutes), then run this again.');
+  process.exit(0);
+}
 const round=n=>n==null?'—':Number(n.toFixed(3));
 const range=a=>`${round(Math.min(...a))}–${round(Math.max(...a))}`;
 const rows=[];
