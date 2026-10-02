@@ -89,3 +89,27 @@ Checked by execution: hero and gallery canvas pixel hashes equal the pre-feature
 
 Still not checked: perceived smoothness and frame rate (the review browser reported the page as hidden and produced no animation frames), Safari and Firefox, real phones, the clipboard success path, and a real PNG download.
 
+
+## Depth pass — package 0 (2026-10-02)
+
+**Executed-and-observed.** Baseline is commit `3781ea5`. `tests/perf.html` is a diagnostic twin built by `build.mjs`; `FORM.html`, all production source, and `tests/renderer.cjs` remain byte-identical at this checkpoint. `npm run check` and `npm run build` pass. The new metric tests exercise empty windows, long stalls, hidden runs, invalid timestamps, frame reconciliation, ranges and pixel hashing.
+
+**Meaning:** make frame delivery and rendering cost reviewable before adding visual work.
+
+**Executed-and-observed.** Visible Chrome 152, MacBook Pro / Apple M1 Pro (8 cores) / 16 GB / macOS 26.5.2. Viewport 1800 × 875 CSS px, DPR 2, `document.hidden === false` throughout accepted runs. Three fixed 10-second runs, five 2-second segments. Refresh estimated from 120 unloaded rAF intervals: 119.0476 Hz (not an independently measured monitor refresh rate). Expected frames per segment: 238.095; slow threshold: 12.6 ms. Intervals are assigned whole by ending callback; terminal-boundary intervals are separate.
+
+| Segment | Delivered / expected frames, each 2s | Median ms, range | p95 ms, range | Worst ms, range | >1.5× interval count, range |
+| --- | --- | --- | --- | --- | --- |
+| Hero rotation | 189–212 / 238.095 | 8.3–8.4 | 16.6–17.4 | 66.7–107.7 | 16–26 |
+| Shape change | 181–220 / 238.095 | 8.3–8.4 | 10.2–16.7 | 41.3–124.5 | 11–17 |
+| Material change | 93–167 / 238.095 | 8.4–8.4 | 33.9–83.2 | 100–400.6 | 25–28 |
+| Word cast | 106–202 / 238.095 | 8.3–8.4 | 17–58.3 | 41.8–308.5 | 23–31 |
+| Twist drag | 81–118 / 238.095 | 8.5–8.8 | 41.6–58.2 | 141.8–383.4 | 29–48 |
+
+Every range has n=3 runs. Run 1 also has a 1057.8 ms terminal interval crossing the end boundary (799.8 ms overshoot), retained explicitly rather than hidden by the fixed-window percentiles. Runs 2–3 terminal intervals: 33.3 / 33.4 ms. The script dispatches synthetic handle events, not hardware pointer input. It scrolls the studio into view at 6 seconds and pauses the lab during the cast so idle settling remains observable.
+
+**Executed-and-observed.** `EXT_disjoint_timer_query` works on all five WebGL contexts. No disjoint or unresolved queries. GPU median ranges and sample counts across the three runs: hero 0.836–0.858 ms (198/213/190 draws); shape 0.713–0.726 ms (212/220/181); material 0.667–0.738 ms (167/93/104); cast 0.618–0.921 ms (63/67/34); twist 0.630–0.641 ms (81/114/118). Full per-run summaries, GPU p95/worst and counts are in `tests/results/baseline-summary.json`. Timer query overhead is included. GPU times do not explain the long rAF gaps on their own; no cause is asserted from this evidence.
+
+**Executed-and-observed.** Five 400 × 300 synchronous draw/readPixels FNV-1a hashes exactly match the owner's reference hashes: `dcbc4c2a`, `577ba6bf`, `937de9cc`, `ce2785be`, `f72ad12a`. GPU: ANGLE Metal Renderer / Apple M1 Pro. These are the local before-hashes for subsequent comparisons.
+
+**Inferred from reading / limits.** Sharing contexts may reduce resource duplication; its timing benefit is not established. Large baseline variation prevents claims of small performance gains. No feel/beauty claim is made. Packages 1–6 and the full responsive/theme matrix are not yet validated at this checkpoint.

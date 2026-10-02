@@ -1,0 +1,24 @@
+{
+  "evidence": "executed-and-observed, transcribed from visible Chrome harness results; rounded to 0.1ms for rAF statistics",
+  "commit": "3781ea5", "date": "2026-10-02T09:18:41.065Z",
+  "machine": "MacBook Pro, M1 Pro 8-core, 16 GB, macOS 26.5.2",
+  "browser": "Chrome 152.0.0.0, ANGLE Metal / Apple M1 Pro",
+  "viewport": [1800,875], "dpr": 2, "documentHidden": false,
+  "refreshHz": 119.04761904765, "refreshSource": "estimated median of 120 unloaded rAF intervals",
+  "segmentWindowMs": 2000, "framesExpectedPerSegment": 238.0952380953,
+  "overBudgetThresholdMs": 12.6, "runs": 3,
+  "columns": ["framesDelivered","medianMs","p95Ms","worstMs","overBudgetCount","gpuSamples","gpuMedianMs","gpuP95Ms","gpuWorstMs"],
+  "segments": {
+    "Hero rotation": [[197,8.4,17.4,66.7,26,198,0.858124,1.982666,3.099833],[212,8.3,16.6,83.7,16,213,0.837625,1.863708,2.927333],[189,8.3,17.3,107.7,16,190,0.836416,1.851083,3.701]],
+    "Shape change": [[212,8.3,16.7,50,17,212,0.712624,1.603708,2.17],[220,8.3,10.2,41.3,11,220,0.7255,1.788083,2.722833],[181,8.4,16.6,124.5,15,181,0.71925,1.580208,2.842999]],
+    "Material change": [[167,8.4,33.9,100,25,167,0.738166,1.80775,2.793124],[93,8.4,83.2,399.9,28,93,0.667374,1.640874,2.339583],[104,8.4,58.4,400.6,25,104,0.680375,1.625875,2.69675]],
+    "Word cast": [[174,8.4,17,141,31,63,0.920583,2.576125,5.431957],[202,8.3,17,41.8,23,67,0.617999,1.776,14.3455],[106,8.4,58.3,308.5,24,34,0.664708,1.235625,19.221874]],
+    "Twist drag": [[81,8.5,41.6,383.4,29,81,0.640708,1.767999,3.775291],[114,8.8,58.2,258.4,48,114,0.639291,1.4895,7.673083],[118,8.6,49.4,141.8,47,118,0.629624,1.292292,2.786291]]
+  },
+  "terminalIntervalsMs": [1057.8,33.3,33.4], "completionOvershootMs": [799.8,17.1,0],
+  "gpuExtension": "EXT_disjoint_timer_query, supported in all five contexts",
+  "gpuDisjoint": [false,false,false], "unresolvedQueries": [0,0,0],
+  "hashes": {"hero-a":"dcbc4c2a","hero-b":"577ba6bf","preview-0":"937de9cc","preview-1":"ce2785be","preview-2":"f72ad12a"},
+  "hashTest": "FNV-1a over 400x300 RGBA readPixels in the same synchronous task as draw. All five match the owner references.",
+  "caveats": ["Large run-to-run variation; do not infer small speed differences.","GPU query overhead is included in the scripted run.","Cast stops rendering once settled; rAF callbacks and renderer draw counts are different quantities.","Twist drag uses synthetic pointer events and does not measure hardware input latency.","Terminal interval is reported separately from callbacks inside the fixed half-open ten-second window."]
+}

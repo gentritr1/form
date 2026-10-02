@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server.mjs",
-    "check": "node --check dist/app.js && node --check server.mjs && node --check build.mjs && node tests/renderer.cjs",
+    "check": "node --check dist/app.js && node --check server.mjs && node --check build.mjs && node --check tests/perf.js && node tests/renderer.cjs && node tests/perf-metrics.test.cjs",
     "build": "node build.mjs"
   }
 }
