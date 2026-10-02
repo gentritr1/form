@@ -62,7 +62,7 @@ Applied available Taste and UI/UX Pro Max guidance, Anthropic Frontend Design, I
 
 ## Depth-pass review
 
-The depth pass was built on `feat/3d-depth-pass` and is merged into `feat/identity-and-cast-a-word`. The default page keeps the original renderer; the depth layers are opt-in through the query flags below until the owner has watched them and a measurement in an ordinary (not automated) browser window exists.
+The depth pass was built on `feat/3d-depth-pass` and is merged into `feat/identity-and-cast-a-word`. The default page keeps the original renderer; the depth layers are opt-in through the query flags below until the owner has accepted how they look and feel. Frame delivery has been measured in an ordinary Chrome window on one machine (M1 Pro, 120Hz): every frame delivered with and without the layers; see `tests/results/MEASUREMENTS.md`. For a quick re-run use `/tests/perf.html?layers=none&batch=1&quick=1` (two configurations, about 80 seconds).
 
 - Before: http://127.0.0.1:4173/?layers=none
 - Depth pass: http://127.0.0.1:4173/?layers=direct,shadow,room,construction,cast,adaptive

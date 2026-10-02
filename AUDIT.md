@@ -291,4 +291,19 @@ The depth pass was reviewed by running the build, then merged. With no `layers` 
 
 **Measured here (same machine, CPU timing in a hidden tab, so no frames):** the shadow support probe takes 0.3–0.5ms per call (300 calls per case, all three shapes, settled and under construction), and a full style recalculation at each of 24 steps of the page colour crossfade takes about 1.3ms (median; p95 about 2ms; 236 elements; six repetitions). Neither reproduces the 5–17ms recorded under automation. The style reads were removed from drawing anyway; the support probe was left as it is.
 
-**Not established:** whether a visitor sees dropped frames. No measurement exists from an ordinary visible browser window. To take one, open `http://127.0.0.1:4173/tests/perf.html?layers=none&batch=1` in a normal Chrome window, leave it in front for about five minutes, then run `npm run report`.
+**Measured in an ordinary browser window (2026-10-02, owner's machine).** Chrome 152, Apple M1 Pro, 1800 × 875 at DPR 2, tab visible throughout, no automation attached; quick batch (`/tests/perf.html?layers=none&batch=1&quick=1`), three ten-second runs per configuration, five two-second segments each. Full table: [tests/results/MEASUREMENTS.md](tests/results/MEASUREMENTS.md).
+
+| | Baseline (no layers) | All six depth layers |
+| --- | --- | --- |
+| Frames delivered per 2s segment (about 241 expected at the calibrated 120.5Hz) | 238–241 | 239–241 |
+| Median / p95 interval | 8.3ms / 9.2–9.3ms | 8.3ms / 9.2–9.3ms |
+| Intervals over 50ms, all 15 segments | 0 | 0 |
+| Intervals over 25ms, all 15 segments | 1 (25.8ms, first run of "Word cast") | 1 (25.1ms, first run of "Word cast") |
+| CPU per draw, p95 | 0.1–0.2ms | 0.2–1.5ms |
+| GPU per draw, median | 0.66–0.83ms | 1.88–2.41ms |
+
+An earlier batch the same afternoon agrees: baseline, three runs, 238–241 frames, nothing over 25ms; depth pass, two runs before the tab was hidden, 239–241 frames, nothing over 25ms.
+
+Reading: both configurations deliver every frame at 120Hz in all five segments, including twist and material change. The p95 of 9.3ms against an 8.3ms interval is within vsync timing jitter, not a missed frame. The depth layers add about 1.3ms of GPU time and up to 1.3ms of CPU time per draw, inside the 8.3ms budget. The stalls in the `0ffb4a9` batch were that session's automation, not the renderer. The single 25ms interval is the first studio draw after the page scrolls to it, once per page load, in both configurations.
+
+Limits: one machine and one browser; synthetic pointer events, so input latency is not measured; no phone, Safari or Firefox measurement; feel and appearance are still the owner's call.

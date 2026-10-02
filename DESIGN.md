@@ -77,7 +77,7 @@ Static checks cover unique IDs, valid anchors/assets, labeled controls, slider s
 
 ## Depth pass: motion and rendering decisions
 
-The depth layers remain reviewable independently with `?layers=direct,shadow,room,construction,cast,adaptive`; `?layers=none` retains the baseline. Responsive checks pass; the depth layers remain opt-in because consistent frame-budget acceptance under rapid input remains open.
+The depth layers remain reviewable independently with `?layers=direct,shadow,room,construction,cast,adaptive`; `?layers=none` retains the baseline. Responsive checks pass. Frame delivery was measured in an ordinary Chrome window on an M1 Pro at 120Hz: every frame delivered in both configurations (see AUDIT.md). The layers stay opt-in until the owner has accepted how they look and feel and another device has been measured.
 
 | Motion | Meaning | Timing / interruption |
 | --- | --- | --- |

@@ -37,7 +37,7 @@ Records accepted: built from the current \`dist/app.js\` (SHA-256 \`${sourceHash
 
 Frame reconciliation and slow counts are recomputed from the saved raw intervals using one common reference: the final baseline's 120-interval calibration, **${round(referenceHz)} Hz** (${round(referenceHz*2)} expected callbacks per 2 seconds; slow threshold ${round(1500/referenceHz)} ms). This is a comparison assumption, not an independently measured panel refresh rate. Individual idle calibrations varied, including a roughly 60Hz estimate followed by roughly 120Hz delivery; comparing their original expected counts directly would be misleading. Raw files retain those original calibrations and statistics unchanged.
 
-These are measurements, not a claim of smoothness or a performance improvement. Baseline and candidate ranges vary considerably. GPU times cover each sculpture draw including enabled passes. Synthetic handle events exercise the renderer but do not measure hardware input latency.
+These are measurements of frame delivery on one machine, not a judgement of how the motion feels. GPU times cover each sculpture draw including enabled passes. Synthetic handle events exercise the renderer but do not measure hardware input latency.
 
 "Slow intervals" depends on the assumed refresh rate and counts ordinary 60Hz frames on an adaptive 120Hz display. The three stall columns do not: an interval over 25ms is a missed frame at 60Hz, over 50ms is a visible hitch, and "ms in stalls" is the time spent in intervals over 25ms within the two-second segment.
 
@@ -46,6 +46,8 @@ These are measurements, not a claim of smoothness or a performance improvement. 
 ${rows.join('\n')}
 
 ## Boundary intervals and raw data
+
+Raw records are local files under \`tests/results\` and are not committed.
 
 ${[...accepted].map(([k,r])=>`- ${k}: ${r.viewport.width} × ${r.viewport.height} at DPR ${r.viewport.dpr}, ${(r.userAgent.match(/Chrome\/\d+|Firefox\/\d+|Version\/\d+.*Safari/)||['browser not identified'])[0]}; original idle estimate ${round(r.calibration.refreshHz)} Hz; terminal intervals ${r.runs.map(x=>round(x.terminalIntervalMs)).join(' / ')} ms; overshoot ${r.runs.map(x=>round(x.completionOvershootMs)).join(' / ')} ms. Raw data: [${r.file}](${r.file}). GPU cleanup: ${JSON.stringify(r.gpuCleanup)}.`).join('\n')}
 
