@@ -1,0 +1,30 @@
+{
+  "base": "3781ea5",
+  "executed": "2026-10-02T10:37:23.537Z",
+  "kind": "CPU source and mesh preservation; not a GPU pixel run",
+  "allLayersOff": true,
+  "identical": true,
+  "hashes": {
+    "vertex": "805cadd783d57ec2711c43213d06f9f998ee0387684bc89e6f368bb56f09e02d",
+    "fragment": "2fa455857ce5935a8bf107ae905ddf6666d93a2a07001a10a44e294b05d594e2",
+    "castWord": "f14474fcd8edbf76a8c5f7723d66a7015e7241346d2f6120d223347f8477aedc",
+    "parseStudy": "ca18ccd73abf79c7c3cff1dfae7d21474f6365985383a1929ed70ae39dcb6828",
+    "meshes": [
+      {
+        "positions": "61f74d03faccf51d4306c59fabae0a3d0eb62a473953711d7c537e31c91ee56d",
+        "normals": "3d47b65bafa0948b0076ef9312bd4011c6ead719c849cb19d80b229f68d00640",
+        "indices": "a846fd85f1d4a9fb966048646d931f4f8cf7fc2fe4d872e8b3edfb004d78e304"
+      },
+      {
+        "positions": "0138461a016c194f3d6e217d8ede454db4086eb61d86f604ee63cdfec705cade",
+        "normals": "a31d4c3b154b3fc94dfed54a17f326f208861925c3c522a9f797ab6d98d0d4c4",
+        "indices": "a846fd85f1d4a9fb966048646d931f4f8cf7fc2fe4d872e8b3edfb004d78e304"
+      },
+      {
+        "positions": "71a3cc5ebc999db8a08fea0b66b2a2f9dd210f92eed4e53bbc39d570bca6e792",
+        "normals": "1ef59d87885981e949bfde255b150eb22fc1e75cdda8615a30a4662cf942e1a3",
+        "indices": "a846fd85f1d4a9fb966048646d931f4f8cf7fc2fe4d872e8b3edfb004d78e304"
+      }
+    ]
+  }
+}

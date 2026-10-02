@@ -377,3 +377,12 @@ h1 { font-size: clamp(60px, 6.7vw, 96px); line-height: 1.04; letter-spacing: -.0
     transition-property: color, background-color, border-color, text-decoration-color, outline-color, fill, stroke, opacity, --bg, --text, --muted, --line, --surface, --accent, --on-accent, --frame-copper, --frame-chrome, --frame-porcelain !important;
   }
 }
+
+/* The equation controls inherit the existing wall-label typography and colour. */
+.equation-term { position: relative; z-index: 2; font: inherit; color: inherit; padding: 0; border: 0; background: none; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: .2em; cursor: pointer; }
+.equation-term:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#construction-study { max-width: 460px; }
+#construction-study[hidden] { display: none; }
+#construction-canvas { display: block; width: 100%; height: 260px; }
+#construction-study label { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); }
+#construction-progress { width: 100%; accent-color: var(--accent); }

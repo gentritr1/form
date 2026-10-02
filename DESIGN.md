@@ -74,3 +74,21 @@ Simulation and drawing are separate. Print composition draws a high-resolution f
 ## Pre-flight and validation boundary
 
 Static checks cover unique IDs, valid anchors/assets, labeled controls, slider semantics, text contrast, and source/standalone consistency. Mocked rendering checks cover state transitions, gestures, keyboard control, context recovery, pause settings, curated variation, export state preservation, dimension restoration, and failures. Local preview restrictions still prevent browser visual review. Actual GPU rendering, PNG pixels, mobile Safari downloading, font wrapping, and perceived smoothness remain outstanding. See AUDIT.md and README.md.
+
+## Depth pass: motion and rendering decisions
+
+The depth layers remain reviewable independently with `?layers=direct,shadow,room,construction,cast,adaptive`; `?layers=none` retains the baseline. Responsive checks pass; the depth layers remain opt-in because consistent frame-budget acceptance under rapid input remains open.
+
+| Motion | Meaning | Timing / interruption |
+| --- | --- | --- |
+| Curve → sweep → modulation | Explains the equation's construction | 920ms of content, preceded by 240ms retraction from the current state on shape changes |
+| Equation amplitude | Shows which feature the selected term controls | ±25%, three-second period; keyboard activation/restoration is immediate; pointer weight eases |
+| Surface fill and cooling | Gives material changes a physical sequence | 1450ms; snapshots the last uploaded periodic material/heat field on interruption |
+| Room reflection transition | Preserves continuity with the changing background | Reads the computed, currently displayed background during the existing CSS crossfade |
+| Pointer twist / scrub | Gives feedback while maintaining continuity | Exponential approach matching existing pose damping; no restarted timeline; keyboard is immediate |
+
+Content phases use the existing cubic Bézier `easeOut`. Exponential damping is retained for continuously retargeted pointer inputs because it has no completion boundary to restart. Reduced motion snaps construction and casting, disables automatic playback and oscillation, and gives terms a discrete second value. Parameter controls stay usable during every transition.
+
+The measured fixed-canvas implementation is retained over the markedly slower 2D-copy prototype. One scene program and mesh set serve visible scissored viewports. Shadows use a separate reduced-resolution silhouette/composite pass. The optional adaptive layer lowers a shared DPR cap after sustained misses of a 60Hz budget and restores it when visible motion settles; this is a frame-budget target, not a claim of 120Hz delivery. No new dependency, downloaded asset or production network request was introduced.
+
+The shadow support probe follows the procedural construction and equation amplitude as well as the settled mesh. It probes every other row/column, refines around the 12 lowest samples, and uses 0.03 units of floor clearance. Dense-reference tests constrain the observed probe error to 0.005 units over the tested cases; this is an approximation, not an analytic bound over all inputs. The silhouette pass still uses the full geometry. Cross-section trigonometry is cached and each generating frame is computed once per ring, avoiding per-vertex temporary vectors. Bloom's radius grows during assembly so its first phase is a meridian rather than a full-size cap. Unchanged studio labels and live-region messages are retained during dragging to avoid repeated DOM mutations and announcements.

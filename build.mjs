@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 const root = new URL('./', import.meta.url);
 const read = path => readFile(new URL(path, root), 'utf8');
 const [html, css, js, image] = await Promise.all([
@@ -14,6 +15,7 @@ await writeFile(new URL('FORM.html', root), standalone);
 console.log('Built FORM.html (' + Buffer.byteLength(standalone) + ' bytes).');
 // Diagnostic-only twin: production FORM.html and the renderer stay byte-identical.
 const [metrics, perf] = await Promise.all([read('tests/perf-metrics.cjs'), read('tests/perf.js')]);
-const diagnostic = standalone.replace('</body>', () => '<script>' + metrics + '\n' + perf + '</script></body>');
+const sourceHash=createHash('sha256').update(js).digest('hex');
+const diagnostic = standalone.replace('</body>', () => '<script>const FORM_SOURCE_SHA256='+JSON.stringify(sourceHash)+';\n' + metrics + '\n' + perf + '</script></body>');
 await writeFile(new URL('tests/perf.html', root), diagnostic);
 console.log('Built tests/perf.html (' + Buffer.byteLength(diagnostic) + ' bytes).');

@@ -167,3 +167,105 @@ Terminal intervals: 66.6 / 233.3 / 16.7 ms. These measurements show a GPU cost i
 | Twist | 151–194 / 238.095 | 8.5–9.2 | 18.2–25.8 | 34.3–82.7 | 34–62 | 1.004–1.033 (194/151/183) |
 
 Terminal intervals: 8.9 / 33.7 / 9.5 ms. These ranges overlap direct-renderer timing in several segments, so no small speed change is claimed. Material and twist GPU medians are higher than direct in this sample. The measurement preceded an additional degenerate-tangent guard; final combined measurements must cover the finished version. Background-specific shadow review, real context loss/restoration and the full responsive matrix remain pending.
+
+## Depth pass — packages 4 and 5 implementation checkpoint
+
+**Package 4 meaning:** the generator, sweep and radius modulation explain how an equation becomes a surface.
+
+**Executed-and-observed:** Chrome compiled the combined shader and displayed a 30-frame diagnostic grid covering all three constructions, a copper-to-chrome cast and a retarget during construction/cooling. Inspection exposed an overly large finite-difference normal threshold and a sampler conflict between cast and shadow; both were corrected. The grid is reproducible with the diagnostic “Construction / cast frames” button. It is sampled from the real renderer, not generated artwork. Appearance remains for the owner to judge.
+
+**Inferred from implementation:** positions and finite-difference normals are evaluated on the GPU during construction and term interaction. Static settled meshes are retained, preserving the original canonical surface. A 240ms retraction starts from the current sweep; a subsequent 920ms construction traces the generator, sweeps a capped tube (or a meridian for Bloom), then introduces radius modulation. End caps close partial sweeps. The studio section contains a scrubber; keyboard changes are immediate and pointer scrubbing eases. Three labelled equation buttons change bounded amplitudes; focus activates them, blur restores the true parameter, and reduced motion uses a discrete alternative value. Existing layout and tokens are retained except for the expressly requested object, scrubber and equation terms.
+
+**Executed-and-observed:** the added construction suite checks 154,275 finite CPU-reference position samples, 47,190 cap/body boundary pairs, canonical endpoint agreement and 363 interruption points. It also checks reduced-motion snapping and zero queued frames after settling. These are CPU invariant tests, not a claim that GPU transform-feedback positions were read back. The original renderer assertions are unchanged and also run under the construction flag.
+
+**Package 5 meaning:** filling, heat and cooling make a material change an event on the surface.
+
+**Inferred from implementation:** a 129-sample periodic parameter field carries colour, metalness, roughness and residual heat. The front divides at the periodic origin and meets halfway around the surface, avoiding a seam. Filling lasts up to 950ms; cooling completes by 1450ms. On retarget, the exact last uploaded field is retained. The colour/roughness heat response is illustrative, not a thermal simulation. After cooling the shader returns to the exact original target material uniforms. The logical material selection remains immediate; no control waits for the event. Manual material changes use the same event. Optional per-keystroke impulses were omitted so the physical rhythm does not add another perpetual or nondeterministic motion source.
+
+**Executed-and-observed:** 819 cast interruptions preserve the exact displayed field at retarget and its first subsequent frame; periodic endpoints match; settled fields are deterministic. Added tests cover reduced motion, idle, poster sampling without advancing the event, and restoring a lost context without resetting thermal state. The original 200-word round-trip and ripple-gate assertions remain untouched and run again under the cast flag.
+
+**Measurement limitation recorded, not discarded silently:** the first construction performance attempt at 1800×819/DPR2 stalled before its third run (`no rAF within 2 seconds`). CPU-heavy tests were also running. Its two completed runs are not used as the required three-run comparison. The viewport differed from the prior 1800×875 baseline. Subsequent comparisons must run at the recorded size with those tests stopped.
+
+**Package 6 decision:** leave the original cobalt still life alone. The measured shadow cost and incomplete combined frame-budget verification do not justify adding refraction/thickness passes.
+
+## Current handoff / acceptance status
+
+**Executed-and-observed in tests:** `npm run check` and `npm run build` passed after adding the construction and cast suites. Equation focus, pointer release, discrete reduced-motion values, immediate keyboard scrubbing, and eased pointer twist have added mock-DOM checks. A focused combined-layer integration check retains a six-canvas context and preserves the thermal field through poster sampling and recovery. The full original assertions run unchanged with baseline, shared, direct, room, construction and cast configurations. The additional combined test is focused; it does not claim to repeat all 200 word cases with the shadow CPU bounds pass.
+
+**Executed-and-observed in a source/buffer comparison:** SHA-256 comparisons against `3781ea5` match for the two all-layers-off shader strings, all three position/normal/index buffers, `castWord` and `parseStudy`. `tests/results/source-preservation.json` contains the hashes. This is stronger preservation evidence than visual inference, but does **not** replace the requested final `gl.readPixels` run. The five earlier observed GPU hashes remain recorded above.
+
+**Inferred from implementation, awaiting final browser recheck:** native focus outlines remain visible on the blank 2D placeholders in direct mode; equation buttons sit above the gallery's stretched link; pointer twist has a separate eased display value while the public logical value and keyboard feedback remain immediate; the shadow uses that displayed twist. Hero reflections now read the body's interpolated background, with CSS colour parsing for RGB, sRGB and OKLab. The poster samples the currently displayed studio background when the room layer is enabled. The last visual frame-sheet review preceded these final input/background fixes.
+
+**Browser limitation, executed-and-observed:** the visible Chrome session disconnected during final checks. Existing-tab commands reported the browser unavailable; reconnect and inventory attempts timed out. A requested viewport override of 1800×875 was issued before disconnection; clearing that override could not subsequently be confirmed. This is not evidence of renderer smoothness or of failure on another GPU.
+
+**Still open; not claimed complete:**
+
+- Three valid runs each for `construction`, `cast`, `adaptive`, and the final combined configuration, compared with a contemporaneous baseline at the same viewport. The interrupted two-run construction attempt is described above.
+- Final all-off pixel hashes, real WebGL2 loss/restoration on all six views, actual WebGL1 fallback compilation, and real poster PNG inspection after the final changes.
+- Real keyboard-only interaction review and reduced-motion review of the final implementation.
+- Widths 320, 375, 768, 925, 1100, 1240 and 1440 in both themes (14 combinations), including scroll overflow and canvas aspect checks.
+- A shared link opened on another machine, and direct-from-disk execution of the final standalone file.
+
+The default remains the baseline. The full depth pass is available through the documented query flags for owner review; it has **not** been promoted as a verified performance improvement. No push, deployment, or modification of the Desktop source checkout was performed in this continuation. The optional cobalt-glass layer remains deferred because packages 0–5 do not yet have complete acceptance evidence.
+
+
+## Recovered continuation and final validation (2026-10-02)
+
+This section supersedes the earlier **Current handoff / acceptance status** list. The implementation was recovered from the existing working tree on `feat/3d-depth-pass`; no reset or replacement of the previous work was performed.
+
+**Executed-and-observed — corrections in this continuation:**
+
+- The support plane now follows the procedural construction and equation deformation. The former calculation used the source/target morph buffers even when the displayed surface was procedural.
+- A full CPU-reference implementation proved too expensive (one combined attempt stopped with `no rAF within 2 seconds`; the completed shape segment had eight callbacks and a 67.8ms median CPU draw). That implementation was replaced by cached cross-section trigonometry, one generating frame per ring, and a coarse support probe refined around its 12 lowest points. The full silhouette still renders from every triangle. The floor clearance is now 0.03 scene units. Dense-reference tests bound the *observed* probe error to 0.005 units across 27 settled shape/twist/pose combinations and 12 construction states. This is not an analytic guarantee for every continuous input.
+- Bloom grows from its meridian without a full-size flat cap in the initial frames. Its settled surface remains canonical. The construction readout stays finite before playback starts, including the reduced-motion path.
+- Studio dragging no longer rewrites identical labels, radio selections, accessibility labels and live-region messages every pointer event.
+- The diagnostic checkpoints JSON/PNG output to the local server after a result is complete, and includes the application's SHA-256 in its JSON. `?batch=1` runs all eight configurations; invalid runs stop it. The final follow-up to the harness carries the first calibration through future batches. `npm run report` rebuilds the report from raw intervals and checks the source hash.
+
+**Executed-and-observed — final functional checks:**
+
+- `npm run check` and `npm run build` pass. The original `tests/renderer.cjs` is byte-identical to `3781ea5`. The existing determinism, ripple gate, export preservation and interrupted-state checks are retained.
+- Five owner GPU hashes match under **both** `layers=none` and `layers=direct`: `dcbc4c2a`, `577ba6bf`, `937de9cc`, `ce2785be`, `f72ad12a`. These are synchronous real draw/readPixels results on the Apple M1 Pro.
+- All **14** width/theme cases (320, 375, 768, 925, 1100, 1240, 1440 × light/dark) have no horizontal overflow. All six views match their CSS aspect ratios; all sampled GL errors are zero.
+- Actual WebGL2 and forced WebGL1 runs recovered **6/6** views after intentional context loss. Each settled run had **0/6** pending animation frames; both produced a 1200 × 1500 PNG. WebGL1's captured error/warning log was empty.
+- Keyboard Space activated each of the three equation controls; Tab released it (`aria-pressed: true → false`). Home/End on the scrubber read “Generating curve” / “Finished surface.” This exercised the real browser controls; no screen-reader software was available.
+- A copied `continuity` study reopened in a fresh tab with Bloom, Porcelain, twist 48, light 1 and seven lobes. This is a same-machine observation, not a second-machine result.
+
+**Executed-and-observed — measurements:** eight final-source configurations × three valid ten-second runs = **24 runs**, at **1800 × 875 / DPR 1**, visible throughout. The final raw records, all five segments per configuration, sample counts, GPU timings, terminal boundary intervals and retained invalid/other-viewport attempts are linked in [FINAL-MEASUREMENTS.md](tests/results/FINAL-MEASUREMENTS.md). macOS 26.5.2 was checked with `sw_vers`; Chrome 152 and Apple M1 Pro were identified in the browser records. No CPU-heavy state tests ran during the final timing batch.
+
+Idle calibration sometimes estimated roughly 60Hz before subsequent delivery returned to roughly 120Hz. Therefore the comparison recomputes expected counts and slow counts from the raw intervals with **one baseline reference, 120.482Hz** (240.964 expected callbacks per two seconds; 12.45ms slow threshold). This is a stated comparison assumption, not an independently verified display specification. Raw records keep their original estimates. Do not compare their differently calibrated ratios without this adjustment.
+
+Every range below has n=3 runs; GPU parenthetical counts are draw samples in run order. The boundary-crossing terminal intervals are reported separately in the full report.
+
+| Layers | Segment | Delivered / expected per 2s | Median ms | p95 ms | Worst ms | Slow intervals | GPU median ms (draw counts) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+|  none | Hero rotation | 132–212 / 240.964 | 8.3–8.5 | 16.7–50.5 | 32.6–100.1 | 17–39 | 0.693–0.777 (212/213/133) |
+|  none | Shape change | 106–217 / 240.964 | 8.3–8.4 | 16.7–67.2 | 33.3–333.3 | 20–26 | 0.624–0.694 (203/217/106) |
+|  none | Material change | 66–178 / 240.964 | 8.4–16.6 | 25.5–83.4 | 66.6–274.9 | 23–41 | 0.633–0.717 (178/176/66) |
+|  none | Word cast | 126–210 / 240.964 | 8.4–8.4 | 16.7–33.4 | 33.4–366.2 | 22–25 | 0.533–0.617 (55/72/60) |
+|  none | Twist drag | 103–112 / 240.964 | 8.8–16.3 | 41.6–58.3 | 91.2–125.5 | 47–55 | 0.523–0.598 (103/110/112) |
+|  direct,shadow,room,construction,cast,adaptive | Hero rotation | 211–232 / 240.964 | 8.3–8.3 | 9.4–16.7 | 25.1–74 | 6–13 | 1.543–1.722 (212/233/225) |
+|  direct,shadow,room,construction,cast,adaptive | Shape change | 205–221 / 240.964 | 8.3–8.4 | 9.5–17 | 33.4–50.9 | 11–24 | 1.328–1.393 (209/205/221) |
+|  direct,shadow,room,construction,cast,adaptive | Material change | 139–202 / 240.964 | 8.3–8.7 | 17.3–33.9 | 34–157.3 | 20–43 | 1.333–1.463 (195/202/139) |
+|  direct,shadow,room,construction,cast,adaptive | Word cast | 186–205 / 240.964 | 8.3–8.4 | 16.7–17.6 | 59–166.6 | 14–29 | 1.172–1.34 (143/137/125) |
+|  direct,shadow,room,construction,cast,adaptive | Twist drag | 117–205 / 240.964 | 8.3–9.2 | 17.3–50.2 | 33.4–125.7 | 28–52 | 1.323–1.36 (117/183/205) |
+
+**Interpretation, not a new measurement:** the optimized implementation reduces repeated CPU work and the final combined twist delivery exceeds the baseline range in this batch. The wide frame-time variation, and GPU cost of extra passes, do not justify a general speedup or smoothness claim. Both versions still have long stalls. The baseline remains the default; the full depth pass is opt-in for owner review.
+
+| Package | Meaning and result | Observed evidence / decision |
+| --- | --- | --- |
+| 0 | Frame delivery is measurable rather than assumed. | Original baseline retained; final comparable baseline plus seven configurations, three runs each, with raw intervals, sample reconciliation and GPU samples. |
+| 1 | Shared resources make the exhibition one renderer. | Direct WebGL2/WebGL1 scene renderer retained; five pixel hashes unchanged, six-view restoration and idle verified. The slower copy prototype remains a comparison flag. |
+| 2 | The light gives the sculpture weight. | Full-geometry silhouettes at three light directions, procedural support correction, reduced-resolution blur and inspected exported posters. Cost is isolated by `shadow`; it is not free. |
+| 3 | Material belongs to its room. | The 18-frame room grid was rendered and inspected; warm chrome edges are visible on the copper room. Rig and energy approximations remain documented above. |
+| 4 | The generator explains the object. | Thirty-frame construction/cast sheet, keyboard terms and scrubbing, finite surface/cap tests and corrected Bloom start. GPU positions were not read with transform feedback. |
+| 5 | A material change fills and cools. | Actual cast/retarget frames, 819 interruption checks, unchanged original determinism assertions, and a fresh-tab study link. A second machine remains untested. |
+| 6 | Optional cobalt glass stays deferred. | Consistent frame-budget acceptance is still open; adding refraction/thickness is not justified by these results. |
+
+**Executed-and-observed image evidence** (actual renderer output, no generated stand-ins):
+
+- [Construction, casting and retargeting: 30 frames](tests/results/final-construction-cast.png)
+- [Three shadow directions](tests/results/final-shadow-angles.png)
+- [Three materials × six room states](tests/results/final-material-room-grid.png)
+- [WebGL2 poster](tests/results/final-poster-webgl2.png) and [WebGL1 poster](tests/results/final-poster-webgl1.png)
+
+**Still unverified / external limits:** native reduced-motion media emulation (mock state tests pass), actual screen-reader output, mobile Safari and other GPUs, a shared link on another machine, and owner acceptance of feel/appearance. Browser security policy explicitly blocked `file://` navigation; no alternate surface or workaround was used. The self-contained build exists and the diagnostic uses that same inlined application, but direct-from-disk launch is not claimed tested. Nothing was deployed or pushed to the Desktop source checkout.

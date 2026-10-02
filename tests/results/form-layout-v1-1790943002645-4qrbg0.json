@@ -1,0 +1,108 @@
+{
+  "schema": "form-layout-v1",
+  "width": 768,
+  "height": 875,
+  "dpr": 1,
+  "theme": "light",
+  "scrollWidth": 768,
+  "noOverflow": true,
+  "checks": [
+    {
+      "id": "hero-canvas",
+      "css": [
+        704,
+        420
+      ],
+      "viewport": [
+        32,
+        212,
+        704,
+        420
+      ],
+      "aspect": 1.6761904954910278,
+      "aspectMatches": true,
+      "error": 0
+    },
+    {
+      "id": "lab-canvas",
+      "css": [
+        560,
+        392
+      ],
+      "viewport": [
+        104,
+        225,
+        560,
+        392
+      ],
+      "aspect": 1.4285714626312256,
+      "aspectMatches": true,
+      "error": 0
+    },
+    {
+      "id": "0",
+      "css": [
+        370.90625,
+        340
+      ],
+      "viewport": [
+        32,
+        252,
+        371,
+        340
+      ],
+      "aspect": 1.0911765098571777,
+      "aspectMatches": true,
+      "error": 0
+    },
+    {
+      "id": "1",
+      "css": [
+        309.09375,
+        290
+      ],
+      "viewport": [
+        427,
+        277,
+        309,
+        290
+      ],
+      "aspect": 1.0655171871185303,
+      "aspectMatches": true,
+      "error": 0
+    },
+    {
+      "id": "2",
+      "css": [
+        577.2734375,
+        390
+      ],
+      "viewport": [
+        95,
+        226,
+        577,
+        390
+      ],
+      "aspect": 1.4794871807098389,
+      "aspectMatches": true,
+      "error": 0
+    },
+    {
+      "id": "construction-canvas",
+      "css": [
+        364.359375,
+        260
+      ],
+      "viewport": [
+        32,
+        292,
+        364,
+        260
+      ],
+      "aspect": 1.399999976158142,
+      "aspectMatches": true,
+      "error": 0
+    }
+  ],
+  "sourceHash": "1e99153bb87a113808daeeac25a3bb146a2517ecd20d255b1fa89cab72ce0db4"
+}

@@ -7,6 +7,9 @@ const depthLayers=new Set(((typeof location.search==='string'?location.search:''
 const shadowEnabled=depthLayers.has('shadow');
 const adaptiveEnabled=depthLayers.has('adaptive');
 const roomEnabled=depthLayers.has('room');
+const constructionEnabled=depthLayers.has('construction');
+const castEnabled=depthLayers.has('cast');
+const parameterEnabled=constructionEnabled||castEnabled;
 const systemTheme = matchMedia('(prefers-color-scheme: dark)');
 const names = ['Trefoil', 'Orbit', 'Bloom'];
 const descriptions = ['One continuous curve. Three crossings.', 'A ring, lifted into a slow wave.', 'Eight lobes, folded from a sphere.'];
@@ -126,6 +129,57 @@ if(roomEnabled){
  fragmentSource=fragmentSource.replace('float grain=sin(vLocal.y*510.+vLocal.x*7.)*.004*uMetal;\n n=normalize(n+vec3(grain,0.,grain*.5));','');
  fragmentSource=fragmentSource.replace('float occlusion=.78+',`float coat=(.04+.96*pow(1.-nv,5.))*(1.-uMetal);color=color*(1.-coat)+environment(r)*coat*.65;\n float occlusion=.78+`);
 }
+if(constructionEnabled){
+ const parametric=`
+ uniform float uBuildShape,uSweep,uRadius,uModulation,uProcedural,uTerm,uCurveMode,uCurveAlpha;
+ attribute vec3 aParameter;
+ varying float vCap;
+ vec3 path(float u){
+  if(uBuildShape<.5){float r=2.+(1.+uTerm)*cos(3.*u);return vec3(r*cos(2.*u),r*sin(2.*u),sin(3.*u))*.47;}
+  float r=1.03+.09*uModulation*(1.+uTerm)*cos(u*5.);return vec3(r*cos(u),r*sin(u),.2*uModulation*sin(u*3.));
+ }
+ vec3 buildSurface(float u,float v){
+  if(uBuildShape>1.5){float theta=v*.5;float r=uRadius*1.24*(1.+.15*uModulation*(1.+uTerm)*cos(u*8.)*pow(sin(theta),2.)+.085*uModulation*cos(theta*12.));return r*vec3(sin(theta)*cos(u),cos(theta),sin(theta)*sin(u));}
+  vec3 c=path(u);
+  if(uBuildShape<.5){vec3 tangent=normalize(path(u+.001)-c);vec3 b=normalize(cross(tangent,vec3(0.,0.,1.)));vec3 n=cross(b,tangent);return c+uRadius*(.26+.018*uModulation*sin(u*6.))*(cos(v)*n+sin(v)*b);}
+  float tube=uRadius*(.36+.055*uModulation*sin(u*5.));return c+vec3(tube*cos(v)*cos(u),tube*cos(v)*sin(u),tube*sin(v));
+ }
+ `;
+ vertexSource=parametric+vertexSource.replace('atan(p.z,p.x)*uLobes','(length(p.xz)>.000001?atan(p.z,p.x):0.)*uLobes');
+ vertexSource=vertexSource.replace('vec3 normal=mix(aNormal,aTargetNormal,uMorph);',`vec3 normal=mix(aNormal,aTargetNormal,uMorph);
+ vCap=step(.5,aParameter.z);
+ if(uProcedural>.5||uCurveMode>.5){
+  float u=aParameter.x*6.28318530718*max(.001,uSweep),v=aParameter.y*6.28318530718;
+  base=buildSurface(u,v);vec3 du=buildSurface(u+.0003,v)-base,dv=buildSurface(u,v+.0003)-base;
+  normal=cross(du,dv);normal=length(normal)>.000000000001?normalize(normal):normalize(base);
+  if(aParameter.z>.5){
+   vec3 along=uBuildShape>1.5?vec3(-sin(u),0.,cos(u)):normalize(path(u+.001)-path(u));
+   normal=along*(aParameter.x>.5?1.:-1.);
+   if(aParameter.z>2.5)base=uBuildShape>1.5?vec3(0.):path(u);
+  }
+  if(uCurveMode>.5){float t=aParameter.x*6.28318530718;base=uBuildShape>1.5?vec3(1.24*sin(t*.5),1.24*cos(t*.5),0.):path(t);normal=normalize(base);}
+ }`);
+ if(roomEnabled)vertexSource=vertexSource.replace('vec3 along=mix(aTangent,aTargetTangent,uMorph);','vec3 along=mix(aTangent,aTargetTangent,uMorph);if(uProcedural>.5){float u=aParameter.x*6.28318530718*max(.001,uSweep),v=aParameter.y*6.28318530718;along=buildSurface(u+.0003,v)-buildSurface(u,v);along=length(along)>.00000001?normalize(along):tangent;}');
+ fragmentSource=fragmentSource.replace('void main(){',`uniform float uProcedural,uCurveMode,uCurveAlpha,uSweep;varying float vCap;
+ void main(){
+ if(vCap>.5&&(uProcedural<.5||uSweep>=1.))discard;
+ if(uCurveMode>.5){gl_FragColor=vec4(uColor*uCurveAlpha,uCurveAlpha);return;}`);
+}
+if(castEnabled){
+ if(!constructionEnabled)vertexSource='attribute vec3 aParameter;\n'+vertexSource;
+ vertexSource='varying float vCastU;\n'+vertexSource.replace('void main(){','void main(){vCastU=aParameter.x;');
+ // Material functions share these globals, assigned before any lighting work in main.
+ fragmentSource=fragmentSource.replace(/\buColor\b/g,'mColor').replace(/\buMetal\b/g,'mMetal').replace(/\buRoughness\b/g,'mRoughness');
+ fragmentSource=fragmentSource.replace(/uniform vec3 mColor([^;]*);/,'uniform vec3 uColor$1;vec3 mColor;').replace('uniform float mMetal,mRoughness,uLight;','uniform float uMetal,uRoughness,uLight;float mMetal,mRoughness;');
+ fragmentSource=fragmentSource.replace('void main(){',`uniform sampler2D uCastField;uniform float uCastActive;varying float vCastU;
+ void main(){
+ mColor=uColor;mMetal=uMetal;mRoughness=uRoughness;
+ if(uCastActive>.5){
+  float x=(clamp(vCastU,0.,1.)*128.+.5)/129.;vec4 field=texture2D(uCastField,vec2(x,.25));vec4 thermal=texture2D(uCastField,vec2(x,.75));
+  mColor=mix(field.rgb,vec3(1.,.19,.025),thermal.g*.8);mMetal=thermal.r;mRoughness=mix(field.a,.82,thermal.g);
+ }`);
+ fragmentSource=fragmentSource.replace('float occlusion=.78+','color+=vec3(1.,.12,.012)*max(0.,mRoughness-.5)*2.;\n float occlusion=.78+');
+}
 const TAU = Math.PI * 2;
 // Cast a word: the same normalised word gives the same sculpture on every device.
 const sceneKeys = ['silver', 'sage', 'ink'];
@@ -182,7 +236,7 @@ function surface(shape, u, v) {
  return [r*Math.sin(theta)*Math.cos(u),r*Math.cos(theta),r*Math.sin(theta)*Math.sin(u)];
 }
 function geometry(shape) {
- const positions=[], normals=[], indices=[],tangents=[];
+ const positions=[], normals=[], indices=[],tangents=[],parameters=[];
  for(let i=0;i<=NU;i++) for(let j=0;j<=NV;j++) {
   const u=i/NU*TAU, v=j/NV*TAU, p=surface(shape,u,v);
   const du=surface(shape,u+.0003,v), dv=surface(shape,u,v+.0003);
@@ -190,11 +244,18 @@ function geometry(shape) {
   if(Math.hypot(...n)<.5)n=normalize(p);
   positions.push(...p); normals.push(...n);
   if(roomEnabled)tangents.push(...normalize(du.map((x,k)=>x-p[k])));
+  if(parameterEnabled)parameters.push(i/NU,j/NV,0);
  }
  for(let i=0;i<NU;i++) for(let j=0;j<NV;j++) {
   const a=i*(NV+1)+j,b=a+NV+1;indices.push(a,b,a+1,a+1,b,b+1);
  }
- return { positions:new Float32Array(positions), normals:new Float32Array(normals), indices:new Uint16Array(indices), tangents:new Float32Array(tangents) };
+ if(constructionEnabled)for(let end=0;end<2;end++){
+  const start=positions.length/3;
+  for(let j=0;j<=NV;j++){positions.push(...surface(shape,end*TAU,j/NV*TAU));normals.push(0,0,1);if(roomEnabled)tangents.push(1,0,0);parameters.push(end,j/NV,end+1);}
+  const center=positions.length/3;positions.push(0,0,0);normals.push(0,0,1);if(roomEnabled)tangents.push(1,0,0);parameters.push(end,0,end+3);
+  for(let j=0;j<NV;j++)indices.push(center,start+j,start+j+1);
+ }
+ return { positions:new Float32Array(positions), normals:new Float32Array(normals), indices:new Uint16Array(indices), tangents:new Float32Array(tangents),parameters:new Float32Array(parameters) };
 }
 const meshes=[geometry(0),geometry(1),geometry(2)];
 // Exact cubic-bezier(.23, 1, .32, 1), shared with the CSS motion token.
@@ -209,6 +270,96 @@ function easeOut(progress) {
 }
 // One invisible GPU canvas, immediately copied to visible 2D placeholders. The copy is
 // synchronous with each draw, so neither display nor poster needs preserveDrawingBuffer.
+// A retarget retracts the current sweep/radius before tracing the new generator. Every
+// intermediate surface retains end caps; no hole is exposed while the sweep is incomplete.
+class Construction {
+ constructor(shape){this.shape=shape;this.target=shape;this.phase='settled';this.sweep=1;this.radius=1;this.modulation=1;this.curve=0;this.curveAlpha=0;}
+ targetShape(shape,time,reduced=false){
+  this.target=shape;
+  if(reduced){this.snap(shape);return;}
+  if(this.phase==='retract')return;
+  this.from={sweep:this.sweep,radius:this.radius,modulation:this.modulation,curveAlpha:this.curveAlpha};this.start=time;this.phase='retract';
+ }
+ snap(shape=this.target){this.shape=this.target=shape;this.phase='settled';this.sweep=this.radius=this.modulation=1;this.curve=this.curveAlpha=0;}
+ update(time,reduced=false){
+  if(reduced){this.snap();return false;}if(this.phase==='settled')return false;
+  if(this.phase==='retract'){
+   const t=easeOut((time-this.start)/240);this.sweep=Math.max(.001,this.from.sweep*(1-t));this.radius=Math.max(.001,this.from.radius*(1-t));this.curveAlpha=this.from.curveAlpha*(1-t);
+   if(t===1){this.shape=this.target;this.phase='assemble';this.start=time;this.seek(0);this.phase='assemble';}return true;
+  }
+  this.seek((time-this.start)/920);this.phase='assemble';if(time-this.start>=920){this.snap();return false;}return true;
+ }
+ seek(progress){
+  const ms=Math.max(0,Math.min(1,progress))*920;this.phase='scrub';
+  this.sweep=ms<200?.001:.001+.999*easeOut((ms-200)/500);
+  this.radius=ms<200?.025:.025+.975*easeOut((ms-200)/500);
+  this.modulation=easeOut((ms-700)/220);this.curve=easeOut(ms/200);this.curveAlpha=1-easeOut((ms-200)/500);
+ }
+}
+// CPU mirror used only for bounds and invariant tests; animation positions/normals run on the GPU.
+function constructionPoint(build, u, v, term=0, cap=0){
+ const shape=build.shape,mod=build.modulation;
+ const path=t=>{if(shape===0){const r=2+(1+term)*Math.cos(3*t);return [r*Math.cos(2*t)*.47,r*Math.sin(2*t)*.47,Math.sin(3*t)*.47];}const r=1.03+.09*mod*(1+term)*Math.cos(t*5);return [r*Math.cos(t),r*Math.sin(t),.2*mod*Math.sin(t*3)];};
+ if(cap>2.5)return shape===2?[0,0,0]:path(u);
+ if(shape===2){const theta=v/2,r=build.radius*1.24*(1+.15*mod*(1+term)*Math.cos(u*8)*Math.sin(theta)**2+.085*mod*Math.cos(theta*12));return [r*Math.sin(theta)*Math.cos(u),r*Math.cos(theta),r*Math.sin(theta)*Math.sin(u)];}
+ const c=path(u);
+ if(shape===0){const tangent=normalize(path(u+.001).map((n,i)=>n-c[i])),b=normalize(cross(tangent,[0,0,1])),n=cross(b,tangent),tube=build.radius*(.26+.018*mod*Math.sin(u*6));return c.map((p,i)=>p+tube*(Math.cos(v)*n[i]+Math.sin(v)*b[i]));}
+ const tube=build.radius*(.36+.055*mod*Math.sin(u*5));return [c[0]+tube*Math.cos(v)*Math.cos(u),c[1]+tube*Math.cos(v)*Math.sin(u),c[2]+tube*Math.sin(v)];
+}
+
+// The shadow support plane uses the same vertices as the GPU. Cache cross-section
+// trigonometry and evaluate the generating frame once per ring, without per-vertex arrays.
+const constructionSections=constructionEnabled?Array.from({length:NV+1},(_,j)=>{const v=j/NV*TAU;return [Math.cos(v),Math.sin(v),Math.cos(v/2),Math.sin(v/2),Math.cos(v*6)];}):[];
+function visitConstruction(build,term,visit,step=1){
+ const mod=build.modulation,shape=build.shape;
+ for(let i=0;i<=NU;i+=step){
+  const u=i/NU*TAU*Math.max(.001,build.sweep),cu=Math.cos(u),su=Math.sin(u);
+  if(shape===2){
+   const folds=.15*mod*(1+term)*Math.cos(8*u);
+   for(let j=0;j<=NV;j+=step){const section=constructionSections[j],ct=section[2],st=section[3],r=build.radius*1.24*(1+folds*st*st+.085*mod*section[4]);visit(r*st*cu,r*ct,r*st*su,i,j);}
+   continue;
+  }
+  let x,y,z,nx,ny,nz,bx,by,tube;
+  if(shape===0){
+   const r=2+(1+term)*Math.cos(3*u),next=u+.001,nr=2+(1+term)*Math.cos(3*next);
+   x=r*Math.cos(2*u)*.47;y=r*Math.sin(2*u)*.47;z=Math.sin(3*u)*.47;
+   let tx=nr*Math.cos(2*next)*.47-x,ty=nr*Math.sin(2*next)*.47-y,tz=Math.sin(3*next)*.47-z;
+   const length=Math.hypot(tx,ty,tz);tx/=length;ty/=length;tz/=length;
+   const flat=Math.hypot(tx,ty);bx=ty/flat;by=-tx/flat;nx=by*tz;ny=-bx*tz;nz=bx*ty-by*tx;
+   tube=build.radius*(.26+.018*mod*Math.sin(6*u));
+  }else{
+   const r=1.03+.09*mod*(1+term)*Math.cos(5*u);x=r*cu;y=r*su;z=.2*mod*Math.sin(3*u);tube=build.radius*(.36+.055*mod*Math.sin(5*u));
+   nx=cu;ny=su;nz=0;bx=by=0;
+  }
+  for(let j=0;j<=NV;j+=step){const section=constructionSections[j],c=section[0],s=section[1];visit(x+tube*(c*nx+s*bx),y+tube*(c*ny+s*by),z+tube*(c*nz+(shape===1?s:0)),i,j);}
+  if(i===0||i===NU)visit(x,y,z);
+ }
+ if(shape===2)visit(0,0,0);
+}
+
+// A periodic material field on the surface parameter. Retargets keep the exact last
+// uploaded bytes, including residual heat; no animation completion owns application state.
+class CastFront {
+ constructor(material){this.size=129;this.data=new Uint8Array(this.size*8);this.snap(material);}
+ snap(material=this.target){this.target=material;this.active=false;const m=materials[material];for(let i=0;i<this.size;i++){const a=i*4,b=(this.size+i)*4;for(let c=0;c<3;c++)this.data[a+c]=Math.round(m.color[c]*255);this.data[a+3]=Math.round(m.roughness*255);this.data[b]=Math.round(m.metal*255);this.data[b+1]=0;}this.from=this.data.slice();}
+ retarget(material,time,reduced=false){if(reduced){this.snap(material);return;}this.from=this.data.slice();this.target=material;this.start=time;this.active=true;}
+ update(time,reduced=false){
+  if(!this.active)return false;if(reduced||time-this.start>=1450){this.snap();return false;}
+  const elapsed=Math.max(0,time-this.start),m=materials[this.target];
+  for(let i=0;i<this.size;i++){
+   // The fill divides at u=0 and meets at u=.5, so the periodic seam is identical.
+   const distance=Math.min(i/(this.size-1),1-i/(this.size-1))*2,age=elapsed-distance*850;
+   const fill=easeOut(age/100),heat=fill*(1-easeOut((age-100)/500));
+   const a=i*4,b=(this.size+i)*4;
+   for(let c=0;c<3;c++)this.data[a+c]=Math.round(this.from[a+c]+(m.color[c]*255-this.from[a+c])*fill);
+   this.data[a+3]=Math.round(this.from[a+3]+(m.roughness*255-this.from[a+3])*fill);
+   this.data[b]=Math.round(this.from[b]+(m.metal*255-this.from[b])*fill);
+   this.data[b+1]=Math.round(Math.max(this.from[b+1]*(1-easeOut(elapsed/600)),heat*255));
+  }
+  return true;
+ }
+}
+
 class ResolutionBudget {
  constructor(){this.value=1.5;this.average=0;this.samples=0;this.last=new Map();this.active=new Set();}
  observe(client,time){
@@ -227,9 +378,9 @@ class ResolutionBudget {
 class SharedRenderer {
  constructor(){
   this.canvas=document.createElement('canvas');this.clients=new Set();this.ready=false;
-  this.direct=depthLayers.has('direct')||shadowEnabled||adaptiveEnabled||roomEnabled;this.live=false;this.layoutDirty=true;this.resolution=new ResolutionBudget();
+  this.direct=depthLayers.has('direct')||shadowEnabled||adaptiveEnabled||roomEnabled||parameterEnabled;this.live=false;this.layoutDirty=true;this.resolution=new ResolutionBudget();
   const options={alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:this.direct};
-  this.gl=this.canvas.getContext('webgl2',options);
+  this.gl=/[?&]webgl=1(?:&|$)/.test(location.search||'')?null:this.canvas.getContext('webgl2',options);
   this.webgl2=!!this.gl;
   if(!this.gl)this.gl=this.canvas.getContext('webgl',options);
   if(this.direct){
@@ -246,7 +397,7 @@ class SharedRenderer {
  initialize(){
   if(this.ready)return;
   const gl=this.gl;if(!gl)throw Error('WebGL is unavailable.');
-  const source=(text,vertex)=>this.webgl2?'#version 300 es\n'+text.replace(/attribute /g,'in ').replace(/varying /g,vertex?'out ':'in ').replace('precision highp float;','precision highp float;\nout vec4 fragmentColor;').replace(/gl_FragColor/g,'fragmentColor'):text;
+  const source=(text,vertex)=>this.webgl2?'#version 300 es\n'+text.replace(/attribute /g,'in ').replace(/varying /g,vertex?'out ':'in ').replace('precision highp float;','precision highp float;\nout vec4 fragmentColor;').replace(/gl_FragColor/g,'fragmentColor').replace(/texture2D/g,'texture'):text;
   const compile=(type,text)=>{const shader=gl.createShader(type);gl.shaderSource(shader,text);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;};
   const vs=compile(gl.VERTEX_SHADER,source(vertexSource,true)),fs=compile(gl.FRAGMENT_SHADER,source(fragmentSource,false));
   this.program=gl.createProgram();gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);
@@ -254,16 +405,20 @@ class SharedRenderer {
   this.uniforms={};for(const n of ['uX','uY','uAspect','uScale','uMorph','uTension','uLobes','uWave','uRipple','uColor','uMetal','uRoughness','uLight'])this.uniforms[n]=gl.getUniformLocation(this.program,n);
   if(shadowEnabled)for(const n of ['uPass','uGround'])this.uniforms[n]=gl.getUniformLocation(this.program,n);
   if(roomEnabled)for(const n of ['uRoom','uAccent'])this.uniforms[n]=gl.getUniformLocation(this.program,n);
-  this.attributes={};for(const n of ['aPosition','aNormal','aTarget','aTargetNormal',...(roomEnabled?['aTangent','aTargetTangent']:[])])this.attributes[n]=gl.getAttribLocation(this.program,n);
+  if(castEnabled)for(const n of ['uCastField','uCastActive'])this.uniforms[n]=gl.getUniformLocation(this.program,n);
+  if(constructionEnabled)for(const n of ['uBuildShape','uSweep','uRadius','uModulation','uProcedural','uTerm','uCurveMode','uCurveAlpha'])this.uniforms[n]=gl.getUniformLocation(this.program,n);
+  this.attributes={};for(const n of ['aPosition','aNormal','aTarget','aTargetNormal',...(roomEnabled?['aTangent','aTargetTangent']:[]),...(parameterEnabled?['aParameter']:[])])this.attributes[n]=gl.getAttribLocation(this.program,n);
   this.meshBuffers=new Map();
   this.meshKeys=['positions','normals',...(roomEnabled?['tangents']:[])];
   for(const mesh of meshes){const buffers={};for(const key of this.meshKeys){buffers[key]=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffers[key]);gl.bufferData(gl.ARRAY_BUFFER,mesh[key],gl.STATIC_DRAW);}this.meshBuffers.set(mesh,buffers);}
   this.index=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.index);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,meshes[0].indices,gl.STATIC_DRAW);
   this.dynamic=Object.fromEntries(this.meshKeys.map(key=>[key,gl.createBuffer()]));this.dynamicMesh=null;
+  if(parameterEnabled){this.parameter=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.parameter);gl.bufferData(gl.ARRAY_BUFFER,meshes[0].parameters,gl.STATIC_DRAW);this.curveIndex=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.curveIndex);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(Array.from({length:NU+1},(_,i)=>i*(NV+1))),gl.STATIC_DRAW);}
   const ext=this.webgl2?null:gl.getExtension('OES_vertex_array_object');
   this.vao=this.webgl2?gl.createVertexArray():ext?ext.createVertexArrayOES():null;
   this.bindVAO=()=>{if(this.webgl2)gl.bindVertexArray(this.vao);else if(ext)ext.bindVertexArrayOES(this.vao);};
   if(shadowEnabled)this.shadow=new ContactShadow(gl,this.webgl2);
+  if(castEnabled){this.castTexture=gl.createTexture();gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this.castTexture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,129,2,0,gl.RGBA,gl.UNSIGNED_BYTE,null);for(const p of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,p,gl.LINEAR);for(const p of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE);gl.activeTexture(gl.TEXTURE0);}
   gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(0,0,0,0);this.ready=true;
  }
  mesh(mesh){
@@ -275,6 +430,7 @@ class SharedRenderer {
   this.bindVAO();const from=this.mesh(s.currentMesh),to=this.mesh(s.targetMesh);
   s.buffers={aPosition:from.positions,aNormal:from.normals,aTarget:to.positions,aTargetNormal:to.normals};
   if(roomEnabled){s.buffers.aTangent=from.tangents;s.buffers.aTargetTangent=to.tangents;}
+  if(parameterEnabled)s.buffers.aParameter=this.parameter;
   if(this.direct&&this.live){
    const dpr=Math.min(devicePixelRatio||1,this.resolution.value),width=Math.round(innerWidth*dpr),height=Math.round(innerHeight*dpr);
    if(this.canvas.width!==width||this.canvas.height!==height){this.canvas.width=width;this.canvas.height=height;this.layoutDirty=true;}
@@ -300,69 +456,96 @@ class ContactShadow {
   for(const p of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE);
   this.fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,this.fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,this.texture,0);
   if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('Shadow framebuffer unavailable.');gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  this.softTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.softTexture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,this.size,this.size,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  for(const p of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,p,gl.LINEAR);
+  for(const p of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE);
+  this.softFbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,this.softFbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,this.softTexture,0);
+  if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('Blur framebuffer unavailable.');gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   let vs='attribute vec2 aQuad;varying vec2 uv;void main(){uv=aQuad*.5+.5;gl_Position=vec4(aQuad,0.,1.);}';
-  let fs='precision highp float;varying vec2 uv;uniform sampler2D uMask;void main(){float alpha=0.;float total=0.;for(int x=-2;x<=2;x++){for(int y=-2;y<=2;y++){float weight=exp(-float(x*x+y*y)*.35);alpha+=texture2D(uMask,uv+vec2(float(x),float(y))*.008).a*weight;total+=weight;}}gl_FragColor=vec4(0.,0.,0.,alpha/total*.28);}';
-  if(webgl2){vs='#version 300 es\n'+vs.replace('attribute','in').replace('varying','out');fs='#version 300 es\n'+fs.replace('varying','in').replace('precision highp float;','precision highp float;out vec4 pixel;').replace('texture2D','texture').replace('gl_FragColor','pixel');}
+  let fs='precision highp float;varying vec2 uv;uniform sampler2D uMask;uniform float uBlur;void main(){if(uBlur<.5){gl_FragColor=texture2D(uMask,uv);return;}float alpha=0.;float total=0.;for(int x=-2;x<=2;x++){for(int y=-2;y<=2;y++){float weight=exp(-float(x*x+y*y)*.35);alpha+=texture2D(uMask,uv+vec2(float(x),float(y))*.008).a*weight;total+=weight;}}gl_FragColor=vec4(0.,0.,0.,alpha/total*.28);}';
+  if(webgl2){vs='#version 300 es\n'+vs.replace('attribute','in').replace('varying','out');fs='#version 300 es\n'+fs.replace('varying','in').replace('precision highp float;','precision highp float;out vec4 pixel;').replace(/texture2D/g,'texture').replace(/gl_FragColor/g,'pixel');}
   const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;};
   this.program=gl.createProgram();const vertex=compile(gl.VERTEX_SHADER,vs),fragment=compile(gl.FRAGMENT_SHADER,fs);gl.attachShader(this.program,vertex);gl.attachShader(this.program,fragment);gl.linkProgram(this.program);gl.deleteShader(vertex);gl.deleteShader(fragment);
   if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.program));
   this.quad=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
-  this.attribute=gl.getAttribLocation(this.program,'aQuad');this.sampler=gl.getUniformLocation(this.program,'uMask');
+  this.attribute=gl.getAttribLocation(this.program,'aQuad');this.sampler=gl.getUniformLocation(this.program,'uMask');this.blur=gl.getUniformLocation(this.program,'uBlur');
  }
  ground(s,scale){
-  const key=[s.currentMesh,s.targetMesh,s.x,s.morph,s.tension,s.lobes,s.wave,s.ripple,scale];
+  const tension=parameterEnabled?s.displayTension:s.tension;
+  const build=constructionEnabled&&(s.construction.phase!=='settled'||s.term!==0)?s.construction:null;
+  const key=[s.currentMesh,s.targetMesh,s.x,s.morph,tension,s.lobes,s.wave,s.ripple,scale,build?.shape,build?.sweep,build?.radius,build?.modulation,s.term];
   if(s.groundKey&&key.every((v,i)=>v===s.groundKey[i]))return s.groundY;
-  const a=s.currentMesh.positions,b=s.targetMesh.positions,cx=Math.cos(s.x),sx=Math.sin(s.x);let min=Infinity;
-  for(let i=0;i<a.length;i+=3){
-   let x=a[i]+(b[i]-a[i])*s.morph,y=a[i+1]+(b[i+1]-a[i+1])*s.morph,z=a[i+2]+(b[i+2]-a[i+2])*s.morph;
-   const angle=y*s.tension*.85,c=Math.cos(angle),sine=Math.sin(angle),dx=c*x+sine*z;z=-sine*x+c*z;x=dx;
+  const a=s.currentMesh.positions,b=s.targetMesh.positions,cx=Math.cos(s.x),sx=Math.sin(s.x);let min=Infinity;const candidates=[];let probing=true;
+  const include=(x,y,z,u=0,v=0)=>{
+   const angle=y*tension*.85,c=Math.cos(angle),sine=Math.sin(angle),dx=c*x+sine*z;z=-sine*x+c*z;x=dx;
    let fade=Math.max(0,Math.min(1,(Math.hypot(x,z)-.03*s.lobes)/.35));fade=fade*fade*(3-2*fade);
-   const ripple=1+s.tension*.07*s.ripple*fade*Math.sin(y*s.wave+Math.atan2(z,x)*s.lobes);
-   min=Math.min(min,(y*cx-z*sx)*ripple*scale);
+   const ripple=1+tension*.07*s.ripple*fade*Math.sin(y*s.wave+Math.atan2(z,x)*s.lobes);
+   const height=(y*cx-z*sx)*ripple*scale;if(height<min)min=height;
+   if(probing&&(candidates.length<12||height<candidates[candidates.length-1].height)){candidates.push({height,u,v});candidates.sort((a,b)=>a.height-b.height);if(candidates.length>12)candidates.pop();}
+  };
+  // A half-density support probe locates the floor; the silhouette still draws every
+  // triangle. The extra 0.005 clearance covers the measured support-probe error.
+  if(build)visitConstruction(build,s.term,include,2);
+  else for(let u=0;u<=NU;u+=2)for(let v=0;v<=NV;v+=2){const i=(u*(NV+1)+v)*3;include(a[i]+(b[i]-a[i])*s.morph,a[i+1]+(b[i+1]-a[i+1])*s.morph,a[i+2]+(b[i+2]-a[i+2])*s.morph,u,v);}
+  probing=false;
+  for(const candidate of candidates)for(let u=Math.max(0,candidate.u-1);u<=Math.min(NU,candidate.u+1);u++)for(let v=Math.max(0,candidate.v-1);v<=Math.min(NV,candidate.v+1);v++){
+   if(build){const p=constructionPoint(build,u/NU*TAU*Math.max(.001,build.sweep),v/NV*TAU,s.term);include(...p,u,v);}
+   else{const i=(u*(NV+1)+v)*3;include(a[i]+(b[i]-a[i])*s.morph,a[i+1]+(b[i+1]-a[i+1])*s.morph,a[i+2]+(b[i+2]-a[i+2])*s.morph,u,v);}
   }
-  s.groundKey=key;s.groundY=min-.025;return s.groundY;
+  s.groundKey=key;s.groundY=min-.03;return s.groundY;
  }
  draw(s,scale){
   const gl=this.gl,manager=sharedRenderer,v=manager.viewport;
   gl.disable(gl.SCISSOR_TEST);gl.disable(gl.DEPTH_TEST);gl.bindFramebuffer(gl.FRAMEBUFFER,this.fbo);gl.viewport(0,0,this.size,this.size);gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.uniform1f(s.uniforms.uGround,this.ground(s,scale));gl.uniform1f(s.uniforms.uPass,1);gl.drawElements(gl.TRIANGLES,meshes[0].indices.length,gl.UNSIGNED_SHORT,0);
-  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(...v);gl.enable(gl.SCISSOR_TEST);gl.scissor(...v);
+  gl.uniform1f(s.uniforms.uGround,this.ground(s,scale));gl.uniform1f(s.uniforms.uPass,1);s.drawGeometry(gl.TRIANGLES,meshes[0].indices.length);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,this.softFbo);
   // Bind no VAO while setting up the composite, preserving the shared geometry VAO.
   if(manager.webgl2)gl.bindVertexArray(null);else{const ext=gl.getExtension('OES_vertex_array_object');if(ext)ext.bindVertexArrayOES(null);}
   gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);gl.enableVertexAttribArray(this.attribute);gl.vertexAttribPointer(this.attribute,2,gl.FLOAT,false,0,0);
-  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.sampler,0);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.sampler,0);gl.uniform1f(this.blur,1);gl.drawArrays(gl.TRIANGLES,0,6);
+  // Only the final single-sample alpha composite runs at the display resolution.
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(...v);gl.enable(gl.SCISSOR_TEST);gl.scissor(...v);gl.bindTexture(gl.TEXTURE_2D,this.softTexture);gl.uniform1f(this.blur,0);
   gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.drawArrays(gl.TRIANGLES,0,6);gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);
   manager.bindVAO();gl.useProgram(s.program);
   for(const n of Object.keys(s.buffers)){const loc=s.attributes[n];gl.bindBuffer(gl.ARRAY_BUFFER,s.buffers[n]);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);}gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,s.index);gl.uniform1f(s.uniforms.uPass,0);
  }
 }
-const sharedRenderer=depthLayers.has('shared')||depthLayers.has('direct')||shadowEnabled||adaptiveEnabled||roomEnabled?new SharedRenderer():null;
+const sharedRenderer=depthLayers.has('shared')||depthLayers.has('direct')||shadowEnabled||adaptiveEnabled||roomEnabled||parameterEnabled?new SharedRenderer():null;
 function cssLinear(value){
  const text=value.trim();let c;
  if(text[0]==='#'){const h=text.slice(1);c=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16)/255);}
- else{const n=(text.match(/[\d.]+/g)||[]).map(Number);c=text.startsWith('color(srgb')?n.slice(0,3):n.slice(0,3).map(v=>v/255);}
+ else{const n=(text.match(/-?(?:\d*\.)?\d+(?:e[+-]?\d+)?/g)||[]).map(Number);
+  if(text.startsWith('oklab(')){
+   const [l,a,b]=n,L=(l+.3963377774*a+.2158037573*b)**3,M=(l-.1055613458*a-.0638541728*b)**3,S=(l-.0894841775*a-1.291485548*b)**3;
+   return [4.0767416621*L-3.3077115913*M+.2309699292*S,-1.2684380046*L+2.6097574011*M-.3413193965*S,-.0041960863*L-.7034186147*M+1.707614701*S].map(v=>Math.max(0,Math.min(1,v)));
+  }
+  c=text.startsWith('color(srgb')?n.slice(0,3):n.slice(0,3).map(v=>v/255);
+  if(text.startsWith('color(srgb-linear'))return c;
+ }
  return c.length===3&&c.every(Number.isFinite)?c.map(v=>Math.pow(Math.max(0,v),2.2)):[.5,.5,.5];
 }
 function roomChanged(){if(roomEnabled)for(const s of allSculptures){s.roomUntil=performance.now()+450;s.request();}}
 class Sculpture {
  constructor(canvas, shape=0, material=0, mode='preview') {
   this.canvas=canvas;this.shape=shape;this.mode=mode;this.currentMesh=meshes[shape];this.targetMesh=this.currentMesh;
+  if(constructionEnabled){this.construction=new Construction(shape);this.termWeight=0;this.termTarget=0;this.termPhase=Math.PI/2;this.term=0;}
   this.x=shape===2?.15:-.38;this.y=.35;this.tx=this.x;this.ty=this.y;
   this.morph=1;this.morphStart=0;this.last=0;this.visible=false;this.frame=0;this.paused=false;
-  this.dragging=false;this.velocity=0;this.hovered=false;this.tension=mode==='lab'?.35:0;this.targetTension=this.tension;this.light=mode==='lab'?0:.15;this.targetLight=this.light;
+  this.dragging=false;this.velocity=0;this.hovered=false;this.tension=mode==='lab'?.35:0;this.targetTension=this.tension;this.displayTension=this.tension;this.pointerTension=false;this.light=mode==='lab'?0:.15;this.targetLight=this.light;
+  if(castEnabled)this.castFront=new CastFront(material);
   this.material=material;this.color=[...materials[material].color];this.metal=materials[material].metal;this.roughness=materials[material].roughness;
   this.materialFrom={color:[...this.color],metal:this.metal,roughness:this.roughness};this.materialStart=0;this.materialProgress=1;
   // Ripple form: 5 lobes and wave 7 reproduce the original surface exactly. Lobes stay integers.
   this.lobes=5;this.targetLobes=5;this.wave=7;this.targetWave=7;this.ripple=1;
   this.display=sharedRenderer?canvas.getContext('2d'):null;
-  if(sharedRenderer?.direct)canvas.style.opacity='0';
+  // Direct-mode 2D placeholders remain transparent; keep their native keyboard focus outline visible.
   this.gl=sharedRenderer?sharedRenderer.gl:canvas.getContext('webgl',{alpha:true,antialias:true,powerPreference:'low-power'});
   if(sharedRenderer)sharedRenderer.clients.add(this);
   this.available=false;this.width=0;this.height=0;
   if(!this.gl){this.unavailable();return;}
   try{this.initialize();this.available=true;}catch(error){console.error('Sculpture:',error.message);this.unavailable();return;}
   this.resize=new ResizeObserver(entries=>{const r=entries[0].contentRect;this.width=r.width;this.height=r.height;this.request();});this.resize.observe(canvas);
-  this.observer=new IntersectionObserver(([e])=>{this.visible=e.isIntersecting;if(!this.visible){cancelAnimationFrame(this.frame);this.frame=0;this.last=0;}else this.request();},{rootMargin:'30px'});this.observer.observe(canvas);
+  this.observer=new IntersectionObserver(([e])=>{this.visible=e.isIntersecting;if(!this.visible){cancelAnimationFrame(this.frame);this.frame=0;this.last=0;if(adaptiveEnabled)sharedRenderer.resolution.finish(this,false);}else this.request();},{rootMargin:'30px'});this.observer.observe(canvas);
   canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();cancelAnimationFrame(this.frame);this.frame=0;this.last=0;this.velocity=0;this.dragging=false;this.unavailable();});
   canvas.addEventListener('webglcontextrestored',()=>{
    try{this.initialize();this.available=true;canvas.style.visibility='';const fallback=canvas.parentElement.querySelector('.fallback');if(fallback)fallback.hidden=true;this.syncAvailability();this.request();}
@@ -398,6 +581,7 @@ class Sculpture {
  }
  select(shape) {
   if(shape===this.shape)return;
+  if(constructionEnabled)this.construction.targetShape(shape,performance.now(),reducedMotion.matches);
   // Preserve the current blended surface when a visitor interrupts a morph.
   if(this.morph<1){const blend=(a,b)=>Float32Array.from(a,(v,i)=>v+(b[i]-v)*this.morph);this.currentMesh={positions:blend(this.currentMesh.positions,this.targetMesh.positions),normals:blend(this.currentMesh.normals,this.targetMesh.normals),...(roomEnabled?{tangents:blend(this.currentMesh.tangents,this.targetMesh.tangents)}:{})};}
   else this.currentMesh=this.targetMesh;
@@ -405,6 +589,7 @@ class Sculpture {
   if(this.available)this.upload();this.request();
  }
  setMaterial(material) {
+  if(castEnabled)this.castFront.retarget(material,performance.now(),reducedMotion.matches);
   this.materialFrom={color:[...this.color],metal:this.metal,roughness:this.roughness};this.material=material;this.materialStart=performance.now();this.materialProgress=0;this.request();
  }
  setTension(value, immediate=false) {
@@ -446,8 +631,17 @@ class Sculpture {
   if(this.hovered)this.ty+=dt*.3;
   if(!this.dragging&&!reducedMotion.matches&&Math.abs(this.velocity)>.005){this.ty+=this.velocity*dt;this.velocity*=Math.exp(-5*dt);}
   const smooth=reducedMotion.matches?1:1-Math.exp(-15*dt);
+  if(constructionEnabled){
+   if(!this.scrubbing)this.construction.update(time,reducedMotion.matches);
+   else if(this.scrubTarget!==undefined){this.scrubValue+=(this.scrubTarget-this.scrubValue)*smooth;if(Math.abs(this.scrubTarget-this.scrubValue)<.001)this.scrubValue=this.scrubTarget;this.construction.seek(this.scrubValue);}
+   if(this.onConstructionFrame)this.onConstructionFrame();
+   this.termWeight+=(this.termTarget-this.termWeight)*(reducedMotion.matches?1:1-Math.exp(-25*dt));if(Math.abs(this.termWeight-this.termTarget)<.001)this.termWeight=this.termTarget;
+   if(this.termWeight>0&&!reducedMotion.matches)this.termPhase+=dt*TAU/3;
+   this.term=reducedMotion.matches?this.termTarget*.25:Math.sin(this.termPhase)*this.termWeight*.25;
+  }
   this.x+=(this.tx-this.x)*smooth;this.y+=(this.ty-this.y)*smooth;this.light+=(this.targetLight-this.light)*smooth;
   this.tension+=(this.targetTension-this.tension)*smooth;
+  if(parameterEnabled&&this.pointerTension&&!reducedMotion.matches){this.displayTension+=(this.tension-this.displayTension)*smooth;if(Math.abs(this.tension-this.displayTension)<.001){this.displayTension=this.tension;if(handlePointer===null)this.pointerTension=false;}}else this.displayTension=this.tension;
   // Ripple gate: flatten the ripple, swap the integer lobe count while it is flat, then raise it again.
   if(reducedMotion.matches){this.lobes=this.targetLobes;this.wave=this.targetWave;this.ripple=1;}
   else{
@@ -457,10 +651,12 @@ class Sculpture {
   }
   if(this.morph<1)this.morph=reducedMotion.matches?1:easeOut((time-this.morphStart)/650);
   if(this.materialProgress<1){this.materialProgress=reducedMotion.matches?1:Math.min(1,(time-this.materialStart)/220);const t=easeOut(this.materialProgress),target=materials[this.material];this.color=this.materialFrom.color.map((c,i)=>c+(target.color[i]-c)*t);this.metal=this.materialFrom.metal+(target.metal-this.materialFrom.metal)*t;this.roughness=this.materialFrom.roughness+(target.roughness-this.materialFrom.roughness)*t;}
+  if(castEnabled)this.castFront.update(time,reducedMotion.matches);
   if(sharedRenderer)sharedRenderer.live=true;
   try{this.draw(w,h);}finally{if(sharedRenderer)sharedRenderer.live=false;}
-  const settling=Math.abs(this.x-this.tx)+Math.abs(this.y-this.ty)+Math.abs(this.light-this.targetLight)+Math.abs(this.tension-this.targetTension)+Math.abs(this.wave-this.targetWave)+Math.abs(1-this.ripple)+(this.lobes!==this.targetLobes?1:0)>.001;
-  const moving=auto||this.hovered||settling||Math.abs(this.velocity)>.005||this.morph<1||this.materialProgress<1||(roomEnabled&&time<this.roomUntil);
+  const settling=(parameterEnabled?Math.abs(this.displayTension-this.tension):0)+Math.abs(this.x-this.tx)+Math.abs(this.y-this.ty)+Math.abs(this.light-this.targetLight)+Math.abs(this.tension-this.targetTension)+Math.abs(this.wave-this.targetWave)+Math.abs(1-this.ripple)+(this.lobes!==this.targetLobes?1:0)>.001;
+  const building=constructionEnabled&&((this.construction.phase!=='settled'&&!this.scrubbing)||this.termTarget>0||this.termWeight>0||(this.scrubTarget!==undefined&&Math.abs(this.scrubTarget-this.scrubValue)>.001));
+  const moving=(castEnabled&&this.castFront.active)||auto||this.hovered||settling||Math.abs(this.velocity)>.005||this.morph<1||this.materialProgress<1||(roomEnabled&&time<this.roomUntil)||(building&&!reducedMotion.matches);
   if(adaptiveEnabled&&sharedRenderer.resolution.finish(this,moving)){sharedRenderer.layoutDirty=true;for(const s of sharedRenderer.clients)s.request();}
   if(moving)this.request();
  }
@@ -476,12 +672,16 @@ class Sculpture {
   // Fit the object to the shorter viewport dimension, including portrait canvases.
   const scale=(this.mode==='hero'?1.1:this.mode==='lab'?1.05:1.02)*Math.min(1,w/h);
   gl.uniform1f(u.uX,this.x);gl.uniform1f(u.uY,this.y);gl.uniform1f(u.uAspect,w/h);gl.uniform1f(u.uScale,scale);
-  gl.uniform1f(u.uMorph,this.morph);gl.uniform1f(u.uTension,this.tension);gl.uniform1f(u.uLobes,this.lobes);gl.uniform1f(u.uWave,this.wave);gl.uniform1f(u.uRipple,this.ripple);gl.uniform3fv(u.uColor,this.color);gl.uniform1f(u.uMetal,this.metal);gl.uniform1f(u.uRoughness,this.roughness);gl.uniform1f(u.uLight,this.light);
-  if(roomEnabled){const root=getComputedStyle(document.documentElement),background=this.mode==='hero'?root.getPropertyValue('--bg'):getComputedStyle(this.canvas.parentElement).backgroundColor;gl.uniform3fv(u.uRoom,cssLinear(background));gl.uniform3fv(u.uAccent,cssLinear(root.getPropertyValue('--accent')));}
+  gl.uniform1f(u.uMorph,this.morph);gl.uniform1f(u.uTension,parameterEnabled?this.displayTension:this.tension);gl.uniform1f(u.uLobes,this.lobes);gl.uniform1f(u.uWave,this.wave);gl.uniform1f(u.uRipple,this.ripple);gl.uniform3fv(u.uColor,this.color);gl.uniform1f(u.uMetal,this.metal);gl.uniform1f(u.uRoughness,this.roughness);gl.uniform1f(u.uLight,this.light);
+  if(roomEnabled){const root=getComputedStyle(document.documentElement),background=this.mode==='hero'?getComputedStyle(document.body).backgroundColor:getComputedStyle(this.canvas.parentElement).backgroundColor;gl.uniform3fv(u.uRoom,cssLinear(background));gl.uniform3fv(u.uAccent,cssLinear(root.getPropertyValue('--accent')));}
+  if(constructionEnabled){const b=this.construction;gl.uniform1f(u.uBuildShape,b.shape);gl.uniform1f(u.uSweep,b.sweep);gl.uniform1f(u.uRadius,b.radius);gl.uniform1f(u.uModulation,b.modulation);gl.uniform1f(u.uProcedural,b.phase!=='settled'||this.term!==0?1:0);gl.uniform1f(u.uTerm,this.term);gl.uniform1f(u.uCurveMode,0);gl.uniform1f(u.uCurveAlpha,b.curveAlpha);}
+  if(castEnabled){gl.uniform1i(u.uCastField,1);gl.uniform1f(u.uCastActive,this.castFront.active?1:0);if(this.castFront.active){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,sharedRenderer.castTexture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,this.castFront.size,2,0,gl.RGBA,gl.UNSIGNED_BYTE,this.castFront.data);gl.uniform1i(u.uCastField,1);gl.activeTexture(gl.TEXTURE0);}}
   if(shadowEnabled){gl.uniform1f(u.uPass,0);sharedRenderer.shadow.draw(this,scale);}
-  gl.drawElements(gl.TRIANGLES,meshes[0].indices.length,gl.UNSIGNED_SHORT,0);
+  if(constructionEnabled&&this.construction.curveAlpha>.001){gl.uniform1f(u.uCurveMode,1);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,sharedRenderer.curveIndex);this.drawGeometry(gl.LINE_STRIP,Math.max(2,Math.round(NU*this.construction.curve)+1));gl.disable(gl.BLEND);gl.uniform1f(u.uCurveMode,0);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.index);}
+  this.drawGeometry(gl.TRIANGLES,meshes[0].indices.length);
   if(sharedRenderer)sharedRenderer.present(this,w,h);
  }
+ drawGeometry(mode,count){const gl=this.gl,u=this.uniforms;gl.uniform1f(u.uLobes,this.lobes);gl.uniform1f(u.uWave,this.wave);gl.uniform1f(u.uRipple,this.ripple);gl.drawElements(mode,count,gl.UNSIGNED_SHORT,0);}
  copyTo(context,x,y,w,h) {
   if(!this.available||this.gl.isContextLost())throw Error('The live sculpture is unavailable.');
   if(sharedRenderer?.direct){
@@ -499,7 +699,29 @@ class Sculpture {
 const hero=new Sculpture(document.querySelector('#hero-canvas'),0,0,'hero');
 const lab=new Sculpture(document.querySelector('#lab-canvas'),2,1,'lab');
 const previews=[...document.querySelectorAll('.preview')].map(c=>new Sculpture(c,Number(c.dataset.shape),Number(c.dataset.material)));
-const allSculptures=[hero,lab,...previews];
+const constructionCanvas=document.querySelector('#construction-canvas');
+const constructionStudy=constructionEnabled&&constructionCanvas?new Sculpture(constructionCanvas,0,0,'preview'):null;
+const allSculptures=[hero,lab,...previews,...(constructionStudy?[constructionStudy]:[])];
+if(constructionStudy){
+ const region=document.querySelector('#construction-study'),slider=document.querySelector('#construction-progress'),label=document.querySelector('#construction-label');region.hidden=false;
+ const readout=()=>{const p=constructionStudy.scrubValue??1;const text=p<200/920?'Generating curve':p<700/920?'Sweeping the tube':p<1?'Radius modulation':'Finished surface';slider.value=String(Math.round(p*100));slider.setAttribute('aria-valuetext',text);label.textContent=text;};
+ constructionStudy.onConstructionFrame=()=>{if(!constructionStudy.scrubbing)constructionStudy.scrubValue=constructionStudy.construction.phase==='settled'?1:Math.min(1,Math.max(0,(performance.now()-constructionStudy.construction.start)/920));readout();};
+ let arrived=false,pointer=false;
+ new IntersectionObserver(([e])=>{if(!e.isIntersecting||arrived)return;arrived=true;if(!reducedMotion.matches){constructionStudy.construction.seek(0);constructionStudy.construction.phase='assemble';constructionStudy.construction.start=performance.now();constructionStudy.request();}},{threshold:.3}).observe(region);
+ slider.addEventListener('pointerdown',()=>{pointer=true;});
+ slider.addEventListener('pointerup',()=>{pointer=false;});slider.addEventListener('pointercancel',()=>{pointer=false;});
+ slider.addEventListener('keydown',()=>{pointer=false;});
+ slider.addEventListener('input',()=>{constructionStudy.scrubbing=true;constructionStudy.scrubTarget=Number(slider.value)/100;if(!pointer||reducedMotion.matches){constructionStudy.scrubValue=constructionStudy.scrubTarget;constructionStudy.construction.seek(constructionStudy.scrubValue);}constructionStudy.request();readout();});
+ const terms=[['cos 3t','Change the amplitude of Trefoil’s three crossings'],['cos 5u','Change the uneven radius of Orbit'],['cos 8φ','Change the depth of Bloom’s eight folds']];
+ document.querySelectorAll('.work-formula').forEach((formula,i)=>{
+  const [term,label]=terms[i];formula.innerHTML=formula.textContent.replace(term,`<button type="button" class="equation-term" aria-label="${label}">${term}</button>`);
+  const button=formula.querySelector('button'),s=previews[i];let held=false,focused=false;
+  const change=keyboard=>{s.termTarget=held||focused?1:0;button.setAttribute('aria-pressed',String(!!s.termTarget));if(keyboard||reducedMotion.matches){s.termWeight=s.termTarget;s.term=s.termTarget*.25;}s.request();};
+  button.addEventListener('click',e=>e.stopPropagation());button.addEventListener('pointerdown',e=>{e.stopPropagation();held=true;change(false);});
+  for(const event of ['pointerup','pointercancel','pointerleave'])button.addEventListener(event,()=>{held=false;change(false);});
+  button.addEventListener('focus',()=>{focused=!held;change(!held);});button.addEventListener('blur',()=>{focused=false;held=false;change(true);});
+ });
+}
 const announce=text=>document.querySelector('#announcement').textContent=text;
 function selectMaterial(i) {
  hero.setMaterial(i);document.documentElement.dataset.material=materialSlugs[i];
@@ -547,7 +769,8 @@ const handle=document.querySelector('#shape-handle'),labShape=document.querySele
 const labStage=document.querySelector('#lab-stage'),printStatus=document.querySelector('#print-status');
 // Segmented radio groups replace the old <select>s; value === data-index === thumb position.
 function segValue(group){const checked=group.querySelector('input:checked');return checked?Number(checked.value):0;}
-function setSeg(group,index){group.querySelectorAll('input').forEach(inp=>{inp.checked=Number(inp.value)===index;});group.dataset.index=String(index);}
+function setSeg(group,index){group.querySelectorAll('input').forEach(inp=>{const checked=Number(inp.value)===index;if(inp.checked!==checked)inp.checked=checked;});if(group.dataset.index!==String(index))group.dataset.index=String(index);}
+function setTextContent(node,text){if(node.textContent!==text)node.textContent=text;}
 const scenes={silver:{bg:'#d9e0e5',text:'#272a2d'},sage:{bg:'#cdd9d2',text:'#272a2d'},ink:{bg:'#202b35',text:'#f0f3f5'}};
 const studies=[
  {title:'A softer orbit',shape:1,material:2,twist:12,light:25,scene:'sage',x:-.3,y:.7},
@@ -561,17 +784,18 @@ const castReadout=document.querySelector('#cast-readout');
 const restingStatus='Your print is a PNG. Nothing you type leaves this page.';
 // The active cast (null when no word is cast), the normalised word it came from, and whether controls changed it since.
 let cast=null,castKey='',castAdjusted=false,castTimer=0;
-function setStatus(text){printStatus.textContent=text;delete printStatus.dataset.error;}
+function setStatus(text){setTextContent(printStatus,text);delete printStatus.dataset.error;}
 function castStatus(){return cast?`Cast from “${studyTitle.value.trim()}”. Adjust it, print it, or copy its link.`:restingStatus;}
 function updateReadout(){
- castReadout.textContent=cast?`Nº ${cast.hash.toString(16).padStart(8,'0')} — ${names[cast.shape]} / ${materials[cast.material].name} / ${cast.lobes} lobes${castAdjusted?' / adjusted':''}`:'Nº — — type to cast';
+ setTextContent(castReadout,cast?`Nº ${cast.hash.toString(16).padStart(8,'0')} — ${names[cast.shape]} / ${materials[cast.material].name} / ${cast.lobes} lobes${castAdjusted?' / adjusted':''}`:'Nº — — type to cast');
 }
 function updateStudyView(){
  setSeg(labShape,lab.shape);setSeg(labMaterial,lab.material);
- document.querySelector('#study-name').textContent=studyTitle.value.trim()||studyName;
- document.querySelector('#lab-meta').textContent=`${names[lab.shape]} / ${materials[lab.material].name}`;
- document.querySelector('#lab-fallback-name').textContent=names[lab.shape];
- lab.canvas.setAttribute('aria-label',`Interactive ${materials[lab.material].name.toLowerCase()} ${names[lab.shape]}. Drag or use arrow keys to rotate.`);
+ setTextContent(document.querySelector('#study-name'),studyTitle.value.trim()||studyName);
+ setTextContent(document.querySelector('#lab-meta'),`${names[lab.shape]} / ${materials[lab.material].name}`);
+ setTextContent(document.querySelector('#lab-fallback-name'),names[lab.shape]);
+ const label=`Interactive ${materials[lab.material].name.toLowerCase()} ${names[lab.shape]}. Drag or use arrow keys to rotate.`;
+ if(lab.studioLabel!==label){lab.studioLabel=label;lab.canvas.setAttribute('aria-label',label);}
 }
 function markPersonal(){studyName=`${names[lab.shape]} study`;if(cast)castAdjusted=true;updateStudyView();updateReadout();setStatus(castStatus());}
 function setScene(key){sceneKey=key;scene=scenes[key];labStage.style.setProperty('--scene-bg',scene.bg);labStage.style.setProperty('--scene-text',scene.text);roomChanged();}
@@ -581,8 +805,10 @@ function setTwist(value,immediate=true){
  handle.setAttribute('aria-valuenow',String(amount));handle.setAttribute('aria-valuetext',amount+' percent');handle.style.setProperty('--twist-ratio',String((100-amount)/100));
 }
 function setLight(value){light.value=String(value);light.style.setProperty('--fill',(value/180*100)+'%');lab.targetLight=(value-45)*Math.PI/180;lab.request();document.querySelector('#light-value').textContent=value+'°';light.setAttribute('aria-valuetext',value+' degrees');}
-tension.addEventListener('input',()=>{setTwist(Number(tension.value));markPersonal();});
-light.addEventListener('input',()=>{setLight(Number(light.value));markPersonal();});
+let sliderPointer=false;
+for(const input of [tension,light]){input.addEventListener('pointerdown',()=>{sliderPointer=true;});input.addEventListener('pointerup',()=>{sliderPointer=false;});input.addEventListener('pointercancel',()=>{sliderPointer=false;});input.addEventListener('keydown',()=>{sliderPointer=false;});}
+tension.addEventListener('input',()=>{lab.pointerTension=sliderPointer;setTwist(Number(tension.value));markPersonal();});
+light.addEventListener('input',()=>{setLight(Number(light.value));if(!sliderPointer)lab.light=lab.targetLight;markPersonal();});
 labShape.addEventListener('change',()=>{const v=segValue(labShape);labShape.dataset.index=String(v);lab.select(v);markPersonal();announce(`${names[lab.shape]} in your studio.`);});
 labMaterial.addEventListener('change',()=>{const v=segValue(labMaterial);labMaterial.dataset.index=String(v);lab.setMaterial(v);markPersonal();announce(`${materials[lab.material].name} selected in your studio.`);});
 // Casting: the word chooses every control, then the visitor refines it.
@@ -624,7 +850,7 @@ handle.addEventListener('pointerdown',e=>{
 });
 handle.addEventListener('pointermove',e=>{
  if(e.pointerId!==handlePointer)return;
- const raw=startTwist+(startY-e.clientY)/railHeight*100;setTwist(raw);markPersonal();
+ const raw=startTwist+(startY-e.clientY)/railHeight*100;if(parameterEnabled)lab.pointerTension=true;setTwist(raw);markPersonal();
  // Small resistance outside the range; the handle settles back to the real value on release.
  const bounded=Math.max(0,Math.min(100,raw)),overshoot=(raw-bounded)*.14;
  handle.style.setProperty('--twist-ratio',String((100-bounded-Math.max(-8,Math.min(8,overshoot)))/100));
@@ -635,13 +861,14 @@ handle.addEventListener('pointerup',releaseHandle);handle.addEventListener('poin
 handle.addEventListener('keydown',e=>{
  const current=Number(tension.value);let next;
  if(e.key==='Home')next=0;else if(e.key==='End')next=100;else{const delta={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:10,PageDown:-10}[e.key];if(delta===undefined)return;next=current+delta;}
- e.preventDefault();setTwist(next);markPersonal();
+ e.preventDefault();lab.pointerTension=false;setTwist(next);lab.displayTension=lab.tension;markPersonal();
 });
 setTwist(35);setLight(45);updateStudyView();
 
 function composePoster(sculpture,title){
  const poster=document.createElement('canvas');poster.width=1200;poster.height=1500;const context=poster.getContext('2d');if(!context)throw Error('The print canvas is unavailable.');
- context.fillStyle=scene.bg;context.fillRect(0,0,1200,1500);context.fillStyle=scene.text;context.textBaseline='alphabetic';
+ const posterInk=roomEnabled?getComputedStyle(sculpture.canvas.parentElement).color:scene.text;
+ context.fillStyle=roomEnabled?getComputedStyle(sculpture.canvas.parentElement).backgroundColor:scene.bg;context.fillRect(0,0,1200,1500);context.fillStyle=posterInk;context.textBaseline='alphabetic';
  context.font='600 104px Helvetica, Arial, sans-serif';context.fillText('form',72,150);
  context.font='24px Helvetica, Arial, sans-serif';context.fillText('A sculpture study by you',74,204);
  let fontSize=64;context.font=`400 ${fontSize}px Helvetica, Arial, sans-serif`;
@@ -649,7 +876,7 @@ function composePoster(sculpture,title){
  context.fillText(title,72,306);
  // Draw immediately before copying: no persistent drawing buffer or stale screenshot.
  sculpture.copyTo(context,48,342,1104,930);
- context.strokeStyle=scene.text;context.globalAlpha=.3;context.lineWidth=1;context.beginPath();context.moveTo(72,1310);context.lineTo(1128,1310);context.stroke();context.globalAlpha=1;
+ context.strokeStyle=posterInk;context.globalAlpha=.3;context.lineWidth=1;context.beginPath();context.moveTo(72,1310);context.lineTo(1128,1310);context.stroke();context.globalAlpha=1;
  context.font='28px Helvetica, Arial, sans-serif';context.fillText(`${names[sculpture.shape]} / ${materials[sculpture.material].name}`,72,1368);
  context.font='22px Helvetica, Arial, sans-serif';context.fillText('Made in the FORM playground',72,1420);
  return poster;
@@ -688,9 +915,9 @@ copyLink.addEventListener('click',async()=>{
 // Opening a link restores its exact parameters immediately; the name is not recast.
 function applyStudy(study){
  clearTimeout(castTimer);castTimer=0;
- lab.select(study.shape);lab.morph=1;
- lab.setMaterial(study.material);const m=materials[study.material];lab.color=[...m.color];lab.metal=m.metal;lab.roughness=m.roughness;lab.materialProgress=1;
- setTwist(study.twist,true);setLight(study.light);lab.light=lab.targetLight;
+ lab.select(study.shape);lab.morph=1;if(constructionEnabled)lab.construction.snap(study.shape);
+ lab.setMaterial(study.material);const m=materials[study.material];lab.color=[...m.color];lab.metal=m.metal;lab.roughness=m.roughness;lab.materialProgress=1;if(castEnabled)lab.castFront.snap(study.material);
+ setTwist(study.twist,true);setLight(study.light);lab.light=lab.targetLight;lab.pointerTension=false;lab.displayTension=lab.tension;
  labStage.style.transition='none';setScene(study.scene);void labStage.offsetWidth;labStage.style.transition='';
  lab.setForm(study.lobes,study.wave,true);
  lab.tx=lab.x=study.x;lab.ty=lab.y=study.y;lab.velocity=0;
@@ -711,5 +938,5 @@ systemTheme.addEventListener('change',updateTheme);updateTheme();
 // System motion preference suspends movement without erasing the visitor's pause choice.
 reducedMotion.addEventListener('change',()=>{for(const s of allSculptures){s.velocity=0;s.hovered=false;s.request();}updatePause();});
 finePointer.addEventListener('change',()=>{if(!finePointer.matches)for(const s of previews){s.hovered=false;s.request();}});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseHandle();for(const s of allSculptures){if(document.hidden){cancelAnimationFrame(s.frame);s.frame=0;}else{s.last=0;s.request();}}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseHandle();for(const s of allSculptures){if(document.hidden){cancelAnimationFrame(s.frame);s.frame=0;if(adaptiveEnabled&&sharedRenderer.resolution.finish(s,false))sharedRenderer.layoutDirty=true;}else{s.last=0;s.request();}}});
 openStudyFromHash();

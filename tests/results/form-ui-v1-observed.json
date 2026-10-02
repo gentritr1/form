@@ -1,0 +1,32 @@
+{
+  "schema": "form-ui-v1",
+  "date": "2026-10-02T12:16:34.365836+00:00",
+  "method": "Observed through Chrome UI; not a mock test",
+  "equations": {
+    "controls": 3,
+    "keyboard": "Space activates; Tab releases",
+    "ariaPressedOnFocus": "true",
+    "ariaPressedAfterTab": "false"
+  },
+  "constructionScrubber": {
+    "Home": "Generating curve",
+    "End": "Finished surface"
+  },
+  "sharedLink": {
+    "url": "http://127.0.0.1:4173/?layers=direct,shadow,room,construction,cast,adaptive#study=v1.2.2.1.48.1.7.79.36.488&name=continuity",
+    "freshTabObserved": {
+      "word": "continuity",
+      "shape": "Bloom",
+      "material": "Porcelain",
+      "twist": 48,
+      "light": 1,
+      "lobes": 7
+    },
+    "secondMachineTested": false
+  },
+  "webgl2Health": "form-health-v1-1790943023354-hdi3be.json",
+  "webgl1Health": "form-health-v1-1790943094101-gmccdu.json",
+  "webgl1ErrorLogs": [],
+  "standaloneFileLaunch": "Blocked by browser security policy: file protocol not allowed. No workaround attempted.",
+  "reducedMotion": "Executed in mock-DOM/state tests; native OS/browser media preference not emulated."
+}
