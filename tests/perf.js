@@ -3,7 +3,9 @@
  'use strict';
  const M=globalThis.FormPerfMetrics,params=new URLSearchParams(location.search);
  const layers=(params.get('layers')||'').split(',').filter(x=>x&&x!=='none');
- const batchLayers=['none','direct','shadow','room','construction','cast','adaptive','direct,shadow,room,construction,cast,adaptive'];
+ // quick=1 measures only the baseline and the complete depth pass (about 80 seconds instead of five minutes).
+ const quick=params.get('quick')==='1',allLayers='direct,shadow,room,construction,cast,adaptive';
+ const batchLayers=quick?['none',allLayers]:['none','direct','shadow','room','construction','cast','adaptive',allLayers];
  const labels=['Hero rotation','Shape change','Material change','Word cast','Twist drag'];
  const panel=document.createElement('aside');panel.id='perf-panel';
  panel.innerHTML=`<style>
@@ -100,7 +102,7 @@
      gpu:{samples:meter.gpu[i].length,medianMs:M.quantile(meter.gpu[i],.5),p95Ms:M.quantile(meter.gpu[i],.95),worstMs:M.quantile(meter.gpu[i],1)}})),gpuSupport:meter.support};
   }finally{dragEnd();pauseAll();result.gpuCleanup.push(meter.finish());}
  }
- async function checkpoint(payload){if(location.protocol!=='http:'||location.hostname!=='127.0.0.1')return;try{const response=await fetch('/tests/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,sourceHash:FORM_SOURCE_SHA256})});if(!response.ok)throw Error('HTTP '+response.status);const saved=await response.json();status.textContent+=' Saved '+saved.file+'.';if(params.get('batch')==='1'&&payload.schema==='form-perf-v1'&&payload.valid){const next=batchLayers.indexOf(layers.join(',')||'none')+1;if(next>0&&next<batchLayers.length)location.search='?layers='+batchLayers[next]+'&batch=1&hz='+(Number(params.get('hz'))||payload.calibration.refreshHz);}}catch(error){status.textContent+=' Local checkpoint unavailable: '+error.message;}}
+ async function checkpoint(payload){if(location.protocol!=='http:'||location.hostname!=='127.0.0.1')return;try{const response=await fetch('/tests/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,sourceHash:FORM_SOURCE_SHA256})});if(!response.ok)throw Error('HTTP '+response.status);const saved=await response.json();status.textContent+=' Saved '+saved.file+'.';if(params.get('batch')==='1'&&payload.schema==='form-perf-v1'&&payload.valid){const next=batchLayers.indexOf(layers.join(',')||'none')+1;if(next>0&&next<batchLayers.length)location.search='?layers='+batchLayers[next]+'&batch=1'+(quick?'&quick=1':'')+'&hz='+(Number(params.get('hz'))||payload.calibration.refreshHz);else status.textContent='Batch complete: '+batchLayers.length+' configurations saved. You can close this tab and run npm run report.';}}catch(error){status.textContent+=' Local checkpoint unavailable: '+error.message;}}
  function show(){ $('perf-results').textContent=JSON.stringify(result,null,2);$('perf-save').disabled=false;panel.querySelector('details').open=true;checkpoint(result);}
  async function guard(fn){if(busy)return;busy=true;invalid='';panel.dataset.running='true';try{ready();await fn();}catch(e){result={...result,valid:false,error:e.message};status.textContent=e.message;show();}finally{busy=false;delete panel.dataset.running;pauseAll();}}
  $('perf-run').onclick=()=>guard(async()=>{
